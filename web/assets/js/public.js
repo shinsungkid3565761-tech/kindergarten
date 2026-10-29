@@ -132,7 +132,9 @@ async function viewHome() {
     todayMeals.length ? `식단 ${todayMeals.length}개` : ''
   ].filter(Boolean).join(' · ') || (weekend ? '즐거운 주말 보내세요' : '오늘 등록된 안내가 없어요');
 
-  const nextLabel = U.relativeDayLabel(nextMealDate, today) === '내일' ? '내일의' : U.formatDateLabel(nextMealDate);
+  // 앞으로 7일 안에 등록된 식단이 없으면 nextMealDate가 비어 있습니다.
+  const nextLabel = !nextMeals.length ? ''
+    : U.dayDiff(today, nextMealDate) === 1 ? '내일의' : U.formatDateLabel(nextMealDate);
 
   // 가로줄 단위로 배치해 PC에서도 나란히 놓인 카드의 높이가 맞도록 합니다.
   return `
