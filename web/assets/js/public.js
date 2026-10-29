@@ -3,7 +3,7 @@
 import { CONFIG } from './config.js';
 import { api, IS_DEMO } from './api.js';
 import { icon } from './icons.js';
-import { initNavbar, initTabBar, openSheet, onSwipe, renderEmpty, renderError } from './ui.js';
+import { initNavbar, initTabBar, openSheet, onSwipe, renderEmpty, renderError, toast } from './ui.js';
 import * as U from './util.js';
 
 const TABS = {
@@ -22,6 +22,8 @@ const state = {
   year: thisYear,
   month: thisMonth,
   selected: today,
+  homeYear: thisYear,
+  homeMonth: thisMonth,
   scheduleFilter: ALL,
   mealFilter: ALL
 };
@@ -33,6 +35,8 @@ const esc = U.escapeHtml;
 
 let renderSeq = 0;
 let monthData = { schedules: [], meals: [] };
+let homeCalendarData = { schedules: [], meals: [] };
+let homeCalendarSeq = 0;
 let tabbar;
 let scrollToTodayPending = true;
 
@@ -104,10 +108,12 @@ function filterChips(values, current, action) {
 
 async function viewHome() {
   const next = U.shiftMonth(thisYear, thisMonth, 1);
-  const [current, upcomingMonth] = await Promise.all([
+  const [current, upcomingMonth, calendarMonth] = await Promise.all([
     api.getMonth(thisYear, thisMonth),
-    api.getMonth(next.year, next.month).catch(() => ({ schedules: [], meals: [] }))
+    api.getMonth(next.year, next.month).catch(() => ({ schedules: [], meals: [] })),
+    api.getMonth(state.homeYear, state.homeMonth)
   ]);
+  homeCalendarData = calendarMonth;
   const schedules = [...current.schedules, ...upcomingMonth.schedules];
   const meals = [...current.meals, ...upcomingMonth.meals];
 
@@ -150,6 +156,10 @@ async function viewHome() {
         </div>
       </section>
 
+      <section class="card glass calendar home-calendar" id="home-calendar" aria-label="${U.formatMonthLabel(state.homeYear, state.homeMonth)} 달력">
+        ${homeCalendarCard()}
+      </section>
+
       <div class="home-meals${nextMeals.length ? ' home-meals--pair' : ''}">
         <section class="card glass meal-card">
           ${cardTitle('meal', '오늘의 급간식')}
@@ -173,11 +183,72 @@ async function viewHome() {
     </div>`;
 }
 
+/** 오늘 화면의 달력 카드 내용 (월 이동 버튼 + 달력) */
+function homeCalendarCard() {
+  const isCurrent = state.homeYear === thisYear && state.homeMonth === thisMonth;
+  return `
+    <header class="card-head">
+      <h2 class="card-title">${icon('calendar', 20)}${U.formatMonthLabel(state.homeYear, state.homeMonth)}</h2>
+      <div class="mini-switcher">
+        ${isCurrent ? '' : '<button type="button" class="btn btn--plain btn--sm" data-action="home-month" data-delta="0">이번 달</button>'}
+        <button type="button" class="btn icon-btn btn--sm" data-action="home-month" data-delta="-1" aria-label="이전 달">${icon('chevronLeft', 18)}</button>
+        <button type="button" class="btn icon-btn btn--sm" data-action="home-month" data-delta="1" aria-label="다음 달">${icon('chevronRight', 18)}</button>
+      </div>
+    </header>
+    ${calendarGrid(state.homeYear, state.homeMonth, homeCalendarData, { action: 'open-day', hint: '날짜를 누르면 그날 일정과 급간식이 보여요' })}`;
+}
+
+async function changeHomeMonth(delta) {
+  const next = delta === 0 ? { year: thisYear, month: thisMonth } : U.shiftMonth(state.homeYear, state.homeMonth, delta);
+  const card = $('#home-calendar');
+  if (!card) return;
+
+  const seq = ++homeCalendarSeq;
+  card.classList.add('is-loading');
+  try {
+    const data = await api.getMonth(next.year, next.month);
+    if (seq !== homeCalendarSeq) return;
+    state.homeYear = next.year;
+    state.homeMonth = next.month;
+    homeCalendarData = data;
+    card.innerHTML = homeCalendarCard();
+    card.setAttribute('aria-label', `${U.formatMonthLabel(next.year, next.month)} 달력`);
+    const after = U.shiftMonth(next.year, next.month, 1);
+    api.getMonth(after.year, after.month).catch(() => {});
+  } catch (err) {
+    if (seq === homeCalendarSeq) toast(err.message, { tone: 'error' });
+  } finally {
+    if (seq === homeCalendarSeq) card.classList.remove('is-loading');
+  }
+}
+
+/** 오늘 화면 달력에서 날짜를 누르면 그날 내용을 팝업으로 보여줍니다. */
+function openDayPopup(date) {
+  const rel = U.relativeDayLabel(date, today);
+  const showRel = Math.abs(U.dayDiff(today, date)) <= 2;
+  const content = U.el(`
+    <div class="day-popup">
+      ${showRel ? `<p class="day-popup__rel"><span class="chip tone-blue">${rel}</span></p>` : ''}
+      ${dayDetailBody(date, homeCalendarData)}
+    </div>`);
+  openSheet({ title: U.formatDateLabel(date), content });
+}
+
 // ─── 달력 ─────────────────────────────────────
 
+/** 그날의 일정 · 급간식 목록 (달력 상세 카드와 팝업에서 함께 사용) */
+function dayDetailBody(date, data) {
+  const events = data.schedules.filter((s) => s.date === date);
+  const meals = U.sortMeals(data.meals.filter((m) => m.date === date));
+
+  return `
+    <h3 class="mini-title">${icon('calendar', 16)}일정</h3>
+    ${events.length ? events.map((e) => renderEventRow(e)).join('') : '<p class="muted-line">등록된 일정이 없어요</p>'}
+    <h3 class="mini-title">${icon('meal', 16)}급간식</h3>
+    ${meals.length ? meals.map(renderMealRow).join('') : '<p class="muted-line">등록된 식단이 없어요</p>'}`;
+}
+
 function renderDayDetail(date) {
-  const events = monthData.schedules.filter((s) => s.date === date);
-  const meals = U.sortMeals(monthData.meals.filter((m) => m.date === date));
   const rel = U.relativeDayLabel(date, today);
   const showRel = Math.abs(U.dayDiff(today, date)) <= 2;
 
@@ -187,29 +258,22 @@ function renderDayDetail(date) {
         <h2 class="day-detail__date">${U.formatDateLabel(date)}</h2>
         ${showRel ? `<span class="chip tone-blue">${rel}</span>` : ''}
       </header>
-      <h3 class="mini-title">${icon('calendar', 16)}일정</h3>
-      ${events.length ? events.map((e) => renderEventRow(e)).join('') : '<p class="muted-line">등록된 일정이 없어요</p>'}
-      <h3 class="mini-title">${icon('meal', 16)}급간식</h3>
-      ${meals.length ? meals.map(renderMealRow).join('') : '<p class="muted-line">등록된 식단이 없어요</p>'}
+      ${dayDetailBody(date, monthData)}
     </section>`;
 }
 
-async function viewCalendar() {
-  monthData = await api.getMonth(state.year, state.month);
-  const prefix = U.monthKey(state.year, state.month);
-  if (!state.selected.startsWith(prefix)) {
-    state.selected = today.startsWith(prefix) ? today : `${prefix}-01`;
-  }
-
-  const events = U.groupBy(monthData.schedules, (s) => s.date);
-  const meals = U.groupBy(monthData.meals, (m) => m.date);
-  const startOffset = new Date(state.year, state.month - 1, 1).getDay();
-  const days = U.daysInMonth(state.year, state.month);
+/** 요일 머리 + 날짜 칸 + 범례. action은 날짜를 눌렀을 때 실행할 동작 이름입니다. */
+function calendarGrid(year, month, data, { action, selected = '', hint = '' }) {
+  const prefix = U.monthKey(year, month);
+  const events = U.groupBy(data.schedules, (s) => s.date);
+  const meals = U.groupBy(data.meals, (m) => m.date);
+  const startOffset = new Date(year, month - 1, 1).getDay();
+  const days = U.daysInMonth(year, month);
   const cells = Math.ceil((startOffset + days) / 7) * 7;
   let grid = '';
 
   for (let i = 0; i < cells; i++) {
-    const date = U.ymd(new Date(state.year, state.month - 1, 1 - startOffset + i));
+    const date = U.ymd(new Date(year, month - 1, 1 - startOffset + i));
     const day = Number(date.slice(8));
     const weekday = i % 7;
     const weekendClass = weekday === 0 ? ' is-sun' : weekday === 6 ? ' is-sat' : '';
@@ -227,10 +291,11 @@ async function viewCalendar() {
       dayEvents.length ? `일정 ${dayEvents.length}개` : '',
       hasMeal ? '식단 있음' : ''
     ].filter(Boolean).join(', ');
+    const pressed = selected ? ` aria-pressed="${date === selected}"` : '';
 
     grid += `
-      <button type="button" class="day${weekendClass}${holiday ? ' is-holiday' : ''}${date === today ? ' is-today' : ''}${date === state.selected ? ' is-selected' : ''}"
-        data-action="select-day" data-date="${date}" aria-pressed="${date === state.selected}" aria-label="${label}">
+      <button type="button" class="day${weekendClass}${holiday ? ' is-holiday' : ''}${date === today ? ' is-today' : ''}${date === selected ? ' is-selected' : ''}"
+        data-action="${action}" data-date="${date}"${pressed} aria-label="${label}">
         <span class="day__num">${day}</span>
         <span class="day__dots">${dayEvents.slice(0, 3).map((e) => `<i class="day__dot tone-${U.categoryTone(e.category)}"></i>`).join('')}${hasMeal ? '<i class="day__dot day__dot--meal"></i>' : ''}</span>
         <span class="day__labels">${dayEvents.slice(0, 2).map((e) => `<span class="day__label tone-${U.categoryTone(e.category)}">${esc(e.title)}</span>`).join('')}</span>
@@ -238,13 +303,24 @@ async function viewCalendar() {
   }
 
   return `
+    <div class="calendar__weekdays" aria-hidden="true">
+      ${U.WEEKDAYS.map((w, i) => `<span class="${i === 0 ? 'is-sun' : i === 6 ? 'is-sat' : ''}">${w}</span>`).join('')}
+    </div>
+    <div class="calendar__grid">${grid}</div>
+    <p class="calendar__legend">${hint ? `<span class="calendar__hint">${esc(hint)}</span>` : ''}<i class="day__dot tone-blue"></i>일정 <i class="day__dot day__dot--meal"></i>급간식</p>`;
+}
+
+async function viewCalendar() {
+  monthData = await api.getMonth(state.year, state.month);
+  const prefix = U.monthKey(state.year, state.month);
+  if (!state.selected.startsWith(prefix)) {
+    state.selected = today.startsWith(prefix) ? today : `${prefix}-01`;
+  }
+
+  return `
     <div class="calendar-layout fade-in">
       <section class="card glass calendar" aria-label="${U.formatMonthLabel(state.year, state.month)} 달력">
-        <div class="calendar__weekdays" aria-hidden="true">
-          ${U.WEEKDAYS.map((w, i) => `<span class="${i === 0 ? 'is-sun' : i === 6 ? 'is-sat' : ''}">${w}</span>`).join('')}
-        </div>
-        <div class="calendar__grid">${grid}</div>
-        <p class="calendar__legend"><i class="day__dot tone-blue"></i>일정 <i class="day__dot day__dot--meal"></i>급간식</p>
+        ${calendarGrid(state.year, state.month, monthData, { action: 'select-day', selected: state.selected })}
       </section>
       <div id="day-detail">${renderDayDetail(state.selected)}</div>
     </div>`;
@@ -415,6 +491,9 @@ async function render() {
     if (seq !== renderSeq) return;
     view.innerHTML = html;
     if (autoScroll && state.year === thisYear && state.month === thisMonth) scrollToToday();
+    if (state.tab === 'home') {
+      onSwipe($('#home-calendar'), { left: () => changeHomeMonth(1), right: () => changeHomeMonth(-1) });
+    }
     if (state.tab === 'calendar') {
       const calendar = view.querySelector('.calendar');
       onSwipe(calendar, { left: () => changeMonth(1), right: () => changeMonth(-1) });
@@ -490,6 +569,12 @@ function init() {
     switch (target.dataset.action) {
       case 'select-day':
         selectDay(target.dataset.date);
+        break;
+      case 'open-day':
+        openDayPopup(target.dataset.date);
+        break;
+      case 'home-month':
+        changeHomeMonth(Number(target.dataset.delta));
         break;
       case 'filter-schedule':
         state.scheduleFilter = target.dataset.value;

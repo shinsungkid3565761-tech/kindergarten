@@ -179,6 +179,38 @@
   align-content: center;
 }
 
+/* 오늘 화면 달력 */
+.home-calendar {
+  transition: opacity 0.2s;
+}
+
+.home-calendar.is-loading {
+  opacity: 0.55;
+}
+
+.home-calendar .card-head {
+  padding: 0 6px 10px 10px;
+}
+
+.mini-switcher {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.calendar__hint {
+  margin-right: auto;
+  padding-left: 4px;
+}
+
+.day-popup__rel {
+  margin: 0 0 4px;
+}
+
+.day-popup .mini-title:first-of-type {
+  margin-top: 4px;
+}
+
 .upcoming-list {
   display: grid;
 }
