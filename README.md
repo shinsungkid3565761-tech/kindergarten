@@ -24,7 +24,7 @@ GitHub Pages (web/)  ──  GET ?action=month ──────────▶
 | `web/admin.html` | 관리자 페이지 |
 | `web/assets/js/config.js` | **Apps Script 웹앱 주소(API_URL)** 와 유치원 이름 설정 |
 | `web/assets/css/liquid.css` | Liquid Glass 디자인 시스템(유리 재질, 플로팅 탭바, 시트, 세그먼트 컨트롤) |
-| `.github/workflows/pages.yml` | `main` 브랜치에 올리면 `web/` 폴더를 GitHub Pages로 자동 배포 |
+| `.github/workflows/pages.yml` | 기본 브랜치에 올리면 `web/` 폴더를 GitHub Pages로 자동 배포 |
 
 ## 1. Apps Script 업데이트 (한 번만)
 
@@ -47,7 +47,7 @@ GitHub Pages (web/)  ──  GET ?action=month ──────────▶
 ## 2. GitHub Pages 배포
 
 1. 이 저장소 **Settings → Pages → Build and deployment → Source: GitHub Actions** 로 설정합니다.
-2. 작업 내용을 `main` 브랜치에 병합(merge)하면 **Actions** 탭에서 자동으로 배포됩니다.
+2. 저장소의 기본 브랜치(Settings → General → Default branch)에 변경이 올라오면 **Actions** 탭에서 자동으로 배포됩니다.
    (Actions 탭 → *Deploy web to GitHub Pages* → **Run workflow** 로 직접 실행해도 됩니다.)
 3. 배포 주소: `https://<GitHub 계정>.github.io/<저장소 이름>/`
    - 공개 페이지: `…/`

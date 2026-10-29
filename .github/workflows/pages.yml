@@ -2,7 +2,6 @@ name: Deploy web to GitHub Pages
 
 on:
   push:
-    branches: [main]
     paths:
       - 'web/**'
       - '.github/workflows/pages.yml'
@@ -19,6 +18,8 @@ concurrency:
 
 jobs:
   deploy:
+    # 기본 브랜치(main 등)에 올라온 변경만 배포합니다.
+    if: github.event_name == 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     environment:
       name: github-pages
