@@ -1,0 +1,105 @@
+# 신성대학교부속유치원 교육일정 · 급간식 안내
+
+구글시트에 저장된 **교육일정**과 **급간식(오전간식 · 점심 · 오후간식)** 을 학부모가 휴대폰에서 보기 좋게 보여 주는 웹페이지입니다.
+화면은 iOS 26의 Liquid Glass(유리 재질) 디자인을 따르고, GitHub Pages로 무료 배포합니다.
+선생님은 **관리자 페이지**에서 일정과 식단을 등록 · 수정 · 삭제하거나, 엑셀 표를 붙여넣어 한 달 치를 한 번에 올릴 수 있습니다.
+
+```
+학부모 / 선생님 브라우저
+        │
+        ▼
+GitHub Pages (web/)  ──  GET ?action=month ──────────▶  Apps Script 웹앱 (apps-script/Code.gs)
+  · index.html 공개 페이지                                    │
+  · admin.html 관리자 페이지 ── POST login/save/delete ─▶     ▼
+                                                     구글시트 [교육일정] [급간식]
+```
+
+## 폴더 구성
+
+| 경로 | 내용 |
+|---|---|
+| `apps-script/Code.gs` | Apps Script 백엔드. 기존 코드(`setupSheets`, `getMonthData` 등)를 그대로 두고 JSON API와 관리자 인증을 추가했습니다. |
+| `apps-script/appsscript.json` | Apps Script 설정(시간대 Asia/Seoul, 웹앱 공개 설정) |
+| `web/index.html` | 공개 페이지: 오늘 · 달력 · 교육일정 · 급간식 탭 |
+| `web/admin.html` | 관리자 페이지 |
+| `web/assets/js/config.js` | **Apps Script 웹앱 주소(API_URL)** 와 유치원 이름 설정 |
+| `web/assets/css/liquid.css` | Liquid Glass 디자인 시스템(유리 재질, 플로팅 탭바, 시트, 세그먼트 컨트롤) |
+| `.github/workflows/pages.yml` | `main` 브랜치에 올리면 `web/` 폴더를 GitHub Pages로 자동 배포 |
+
+## 1. Apps Script 업데이트 (한 번만)
+
+1. 구글시트에서 **확장 프로그램 → Apps Script** 를 엽니다. (지금 쓰고 있는 프로젝트)
+2. `Code.gs` 내용을 이 저장소의 [`apps-script/Code.gs`](apps-script/Code.gs) 로 **전체 교체**합니다.
+   기존 `index.html` 파일은 지우지 않아도 됩니다. (주소를 그냥 열면 예전 화면이 그대로 나옵니다.)
+3. 왼쪽 **⚙ 프로젝트 설정 → 스크립트 속성 → 속성 추가**
+   - 속성: `ADMIN_PASSWORD`
+   - 값: 관리자 비밀번호 (선생님들끼리만 공유)
+4. 편집기에서 `setupSheets` 함수를 한 번 실행합니다. (`교육일정`, `급간식` 시트가 없으면 만들어 줍니다)
+5. **배포 → 배포 관리 → ✏️ 수정 → 버전: 새 버전 → 배포**
+   - 실행 사용자: **나**
+   - 액세스 권한: **모든 사용자**
+
+   ⚠️ "새 배포"가 아니라 기존 배포를 **수정**해야 웹앱 주소(`…/exec`)가 바뀌지 않습니다.
+   주소가 바뀌었다면 `web/assets/js/config.js` 의 `API_URL` 을 새 주소로 바꿔 주세요.
+
+확인: 브라우저에서 `웹앱주소?action=ping` 을 열었을 때 `{"ok":true,...}` 가 보이면 성공입니다.
+
+## 2. GitHub Pages 배포
+
+1. 이 저장소 **Settings → Pages → Build and deployment → Source: GitHub Actions** 로 설정합니다.
+2. 작업 내용을 `main` 브랜치에 병합(merge)하면 **Actions** 탭에서 자동으로 배포됩니다.
+   (Actions 탭 → *Deploy web to GitHub Pages* → **Run workflow** 로 직접 실행해도 됩니다.)
+3. 배포 주소: `https://<GitHub 계정>.github.io/<저장소 이름>/`
+   - 공개 페이지: `…/`
+   - 관리자 페이지: `…/admin.html`
+
+## 3. 사용 방법
+
+### 학부모 (공개 페이지)
+- **오늘**: 오늘의 급간식, 오늘 일정, 다가오는 일정, 내일 식단
+- **달력**: 일정은 색 점, 급간식은 회색 점으로 표시. 날짜를 누르면 그날 내용이 아래에 나옵니다. 좌우로 밀면 달이 바뀝니다.
+- **교육일정**: 날짜별 일정 목록, 구분(행사 · 휴원 등)별 필터
+- **급간식**: 주차별 식단, 오전간식/점심/오후간식 필터, 알레르기 번호(1~19) 안내
+- 아이폰 Safari에서 **공유 → 홈 화면에 추가** 하면 앱처럼 쓸 수 있습니다.
+
+### 선생님 (관리자 페이지)
+- 스크립트 속성에 넣은 비밀번호로 로그인합니다. (12시간 유지, 비밀번호를 바꾸면 기존 로그인은 모두 풀립니다)
+- **새로 추가 / 항목 눌러 수정 · 복제 · 삭제**
+- 교육일정은 **여러 날에 걸친 일정**(방학, 행사 기간)을 주말 제외 옵션과 함께 한 번에 등록할 수 있습니다.
+- **엑셀 붙여넣기**: 엑셀 · 구글시트에서 아래 순서의 열을 복사해 붙여넣으면 미리보기 후 한 번에 등록됩니다.
+  - 급간식: `날짜 │ 구분 │ 메뉴 │ 알레르기 정보 │ 비고`
+  - 교육일정: `날짜 │ 구분 │ 행사명 │ 내용`
+  - 날짜는 `2026-03-03`, `2026. 3. 3.`, `3/3`, `3월 3일` 모두 인식합니다.
+- 구글시트를 직접 고쳐도 됩니다. 공개 페이지에는 바로(최대 5분 이내) 반영됩니다.
+
+### 식단 입력 팁
+- 메뉴는 한 줄에 하나씩, 또는 쉼표로 구분합니다.
+- 알레르기 정보는 `1.2.5.6` 처럼 번호로 적으면 화면에 식품 이름으로 풀어 보여 줍니다.
+  메뉴 뒤에 붙인 번호(`쇠고기미역국5.6.16.`)도 자동으로 인식합니다.
+
+## 미리보기 (예시 데이터)
+
+주소 뒤에 `?demo` 를 붙이면 서버 없이 예시 데이터로 화면을 볼 수 있습니다. (`admin.html?demo` 는 아무 비밀번호나 입력)
+예시 데이터는 그 브라우저에만 저장되며 실제 구글시트에는 아무것도 기록되지 않습니다.
+
+로컬에서 보기:
+
+```bash
+cd web && python3 -m http.server 8000
+```
+
+→ <http://localhost:8000/?demo>
+
+## API 요약 (Apps Script)
+
+| 요청 | 설명 |
+|---|---|
+| `GET ?action=ping` | 동작 확인 |
+| `GET ?action=month&year=2026&month=3` | 해당 월 `{ schedules: [...], meals: [...] }` (각 항목에 시트 행 번호 `row` 포함) |
+| `POST {action:"login", password}` | 관리자 토큰 발급 (12시간) |
+| `POST {action:"save", token, kind, item, row?, original?}` | 추가(`row` 없음) 또는 수정. 수정 시 `original` 과 현재 시트 값이 다르면 `CONFLICT` 로 거부해 덮어쓰기를 막습니다. |
+| `POST {action:"delete", token, kind, row, original}` | 삭제 |
+| `POST {action:"bulkAdd", token, kind, items}` | 여러 건 한 번에 추가 (최대 500건, 한 줄이라도 틀리면 아무것도 저장하지 않음) |
+
+`kind` 는 `schedule`(교육일정) 또는 `meal`(급간식)입니다.
+POST 본문은 브라우저의 CORS 사전 요청을 피하기 위해 `Content-Type: text/plain` 으로 보낸 JSON 입니다.

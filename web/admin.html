@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>관리자 · 신성대학교부속유치원</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#eef3fb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#070b16" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet" href="assets/css/liquid.css">
+  <link rel="stylesheet" href="assets/css/app.css">
+  <script type="module" src="assets/js/admin.js"></script>
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true">
+    <span class="blob blob--1"></span>
+    <span class="blob blob--2"></span>
+    <span class="blob blob--3"></span>
+    <span class="blob blob--4"></span>
+  </div>
+
+  <div class="login" id="login" hidden>
+    <section class="login__card glass" aria-labelledby="login-title">
+      <div class="login__icon" id="login-icon"></div>
+      <h1 class="login__title" id="login-title">관리자 로그인</h1>
+      <p class="login__text" id="login-text">교육일정 · 급간식 관리</p>
+      <form class="login__form" id="login-form" novalidate>
+        <label class="field">
+          <span class="field__label">비밀번호</span>
+          <input class="input" type="password" name="password" autocomplete="current-password" required>
+        </label>
+        <p class="login__error" id="login-error" role="alert" hidden></p>
+        <button class="btn btn--tint btn--block" type="submit" id="login-submit">로그인</button>
+      </form>
+      <p class="login__hint" id="login-hint" hidden>예시 데이터 모드입니다. 아무 비밀번호나 입력하면 들어갈 수 있어요.</p>
+      <a class="btn btn--plain login__back" href="./">공개 페이지로 돌아가기</a>
+    </section>
+  </div>
+
+  <div id="admin" hidden>
+    <header class="navbar" id="navbar">
+      <div class="navbar__inner glass">
+        <div class="navbar__side">
+          <a class="btn icon-btn" href="./" id="public-link" aria-label="공개 페이지 보기" title="공개 페이지 보기"></a>
+        </div>
+        <span class="navbar__title">관리자</span>
+        <div class="navbar__side navbar__side--end">
+          <span id="demo-chip-slot"></span>
+          <button type="button" class="btn icon-btn" id="logout" aria-label="로그아웃" title="로그아웃"></button>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <section class="hero">
+        <p class="eyebrow" id="school-name">신성대학교부속유치원</p>
+        <h1 class="large-title" id="admin-title">관리자</h1>
+        <p class="subtitle">교육일정과 급간식을 등록하면 공개 페이지에 바로 반영돼요.</p>
+      </section>
+
+      <div class="admin-toolbar" id="admin-toolbar"></div>
+      <div class="admin-actions" id="admin-actions"></div>
+      <p class="admin-stats" id="admin-stats" aria-live="polite"></p>
+      <div id="admin-list"></div>
+    </main>
+  </div>
+</body>
+</html>
