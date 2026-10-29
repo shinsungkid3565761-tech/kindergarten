@@ -126,49 +126,50 @@ async function viewHome() {
     todayMeals.length ? `식단 ${todayMeals.length}개` : ''
   ].filter(Boolean).join(' · ') || (weekend ? '즐거운 주말 보내세요' : '오늘 등록된 안내가 없어요');
 
+  const nextLabel = U.relativeDayLabel(nextMealDate, today) === '내일' ? '내일의' : U.formatDateLabel(nextMealDate);
+
+  // 가로줄 단위로 배치해 PC에서도 나란히 놓인 카드의 높이가 맞도록 합니다.
   return `
-    <div class="home-grid fade-in">
-      <div class="home-col">
-        <section class="card glass today-card">
+    <div class="home fade-in">
+      <section class="card glass today-hero">
+        <div class="today-hero__date">
           <div class="date-tile" aria-hidden="true">
             <span class="date-tile__month">${m}월</span>
             <span class="date-tile__day">${d}</span>
           </div>
           <div>
-            <p class="today-card__weekday">${U.weekdayName(today)}요일</p>
-            <p class="today-card__summary">${esc(summary)}</p>
+            <p class="today-hero__weekday">${U.weekdayName(today)}요일</p>
+            <p class="today-hero__summary">${esc(summary)}</p>
           </div>
-        </section>
+        </div>
+        <div class="today-hero__events">
+          <h2 class="mini-title">${icon('calendar', 16)}오늘 일정</h2>
+          ${todayEvents.length
+            ? todayEvents.map((e) => renderEventRow(e)).join('')
+            : '<p class="muted-line">오늘은 특별한 일정이 없어요</p>'}
+        </div>
+      </section>
 
-        <section class="card glass">
+      <div class="home-meals${nextMeals.length ? ' home-meals--pair' : ''}">
+        <section class="card glass meal-card">
           ${cardTitle('meal', '오늘의 급간식')}
           ${todayMeals.length
             ? todayMeals.map(renderMealRow).join('')
             : renderEmpty({ iconName: 'bowl', title: weekend ? '주말에는 급간식이 없어요' : '오늘 등록된 식단이 없어요' })}
         </section>
-      </div>
-
-      <div class="home-col">
-        <section class="card glass">
-          ${cardTitle('calendar', '오늘 일정')}
-          ${todayEvents.length
-            ? todayEvents.map((e) => renderEventRow(e)).join('')
-            : renderEmpty({ iconName: 'sparkles', title: '오늘은 특별한 일정이 없어요' })}
-        </section>
-
-        <section class="card glass">
-          ${cardTitle('list', '다가오는 일정', upcoming.length ? `<button type="button" class="btn btn--plain btn--sm" data-action="goto" data-tab="schedule">전체 보기</button>` : '')}
-          ${upcoming.length
-            ? upcoming.map((e) => renderEventRow(e, { showDate: true })).join('')
-            : renderEmpty({ iconName: 'calendar', title: '예정된 일정이 없어요' })}
-        </section>
-
         ${nextMeals.length ? `
-          <section class="card glass">
-            ${cardTitle('bowl', `${U.relativeDayLabel(nextMealDate, today) === '내일' ? '내일' : U.formatDateLabel(nextMealDate)} 식단`)}
+          <section class="card glass meal-card">
+            ${cardTitle('bowl', `${nextLabel} 급간식`)}
             ${nextMeals.map(renderMealRow).join('')}
           </section>` : ''}
       </div>
+
+      <section class="card glass">
+        ${cardTitle('list', '다가오는 일정', upcoming.length ? `<button type="button" class="btn btn--plain btn--sm" data-action="goto" data-tab="schedule">전체 보기</button>` : '')}
+        ${upcoming.length
+          ? `<div class="upcoming-list">${upcoming.map((e) => renderEventRow(e, { showDate: true })).join('')}</div>`
+          : renderEmpty({ iconName: 'calendar', title: '예정된 일정이 없어요' })}
+      </section>
     </div>`;
 }
 
