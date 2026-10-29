@@ -309,7 +309,11 @@ function calendarGrid(year, month, data, { action, selected = '', hint = '' }) {
       ${U.WEEKDAYS.map((w, i) => `<span class="${i === 0 ? 'is-sun' : i === 6 ? 'is-sat' : ''}">${w}</span>`).join('')}
     </div>
     <div class="calendar__grid">${grid}</div>
-    <p class="calendar__legend">${hint ? `<span class="calendar__hint">${esc(hint)}</span>` : ''}<i class="day__dot tone-blue"></i>일정 <i class="day__dot day__dot--meal"></i>급간식</p>`;
+    <p class="calendar__legend">
+      ${hint ? `<span class="calendar__hint">${esc(hint)}</span>` : ''}
+      <span class="legend-item"><i class="day__dot tone-blue"></i>일정</span>
+      <span class="legend-item"><i class="day__dot day__dot--meal"></i>급간식</span>
+    </p>`;
 }
 
 async function viewCalendar() {

@@ -49,6 +49,10 @@
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --gutter-left: max(16px, var(--safe-left));
+  --gutter-right: max(16px, var(--safe-right));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -247,7 +251,7 @@ a {
   left: 0;
   right: 0;
   z-index: 40;
-  padding: calc(var(--safe-top) + 8px) 12px 8px;
+  padding: calc(var(--safe-top) + 8px) max(12px, var(--safe-right)) 8px max(12px, var(--safe-left));
   pointer-events: none;
 }
 
@@ -343,7 +347,41 @@ a {
 .page {
   max-width: 1080px;
   margin: 0 auto;
-  padding: 0 16px calc(var(--safe-bottom) + 120px);
+  padding: 0 var(--gutter-right) calc(var(--safe-bottom) + 120px) var(--gutter-left);
+}
+
+/* 가로로 눕힌 폰 · 접힌 폴더블처럼 세로가 짧은 화면 */
+@media (orientation: landscape) and (max-height: 500px) {
+  .hero {
+    padding-top: calc(var(--safe-top) + 56px);
+  }
+
+  .navbar {
+    padding-top: calc(var(--safe-top) + 4px);
+  }
+
+  .tabbar {
+    bottom: calc(var(--safe-bottom) + 8px);
+    padding: 4px;
+  }
+
+  .tabbar__lens {
+    top: 4px;
+    bottom: 4px;
+  }
+
+  .tabbar__item {
+    grid-auto-flow: column;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    font-size: 12px;
+  }
+
+  .tabbar__item svg {
+    width: 20px;
+    height: 20px;
+  }
 }
 
 .section {

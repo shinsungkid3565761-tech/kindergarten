@@ -203,6 +203,14 @@
   padding-left: 4px;
 }
 
+/* 폴더블 외부 화면처럼 좁은 화면: 안내 문구는 한 줄을 따로 씁니다 */
+@media (max-width: 479px) {
+  .calendar__hint {
+    flex-basis: 100%;
+    padding-left: 0;
+  }
+}
+
 .day-popup__rel {
   margin: 0 0 4px;
 }
@@ -587,20 +595,20 @@ button.day:active {
 
 .calendar__legend {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
-  gap: 6px;
+  gap: 4px 12px;
   margin: 8px 10px 0;
   font-size: 12px;
   color: var(--text-3);
 }
 
-.calendar__legend .day__dot + * {
-  margin-right: 0;
-}
-
-.calendar__legend .day__dot:not(:first-child) {
-  margin-left: 8px;
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
 }
 
 .day-detail__head {
@@ -621,8 +629,8 @@ button.day:active {
 .filter-chips {
   display: flex;
   gap: 8px;
-  margin: 0 -16px 14px;
-  padding: 2px 16px 6px;
+  margin: 0 calc(-1 * var(--gutter-right)) 14px calc(-1 * var(--gutter-left));
+  padding: 2px var(--gutter-right) 6px var(--gutter-left);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -865,7 +873,7 @@ button.day:active {
   display: grid;
   place-items: center;
   min-height: calc(100dvh - var(--safe-top) - var(--safe-bottom));
-  padding: calc(var(--safe-top) + 24px) 16px calc(var(--safe-bottom) + 24px);
+  padding: calc(var(--safe-top) + 24px) var(--gutter-right) calc(var(--safe-bottom) + 24px) var(--gutter-left);
 }
 
 .login__card {
