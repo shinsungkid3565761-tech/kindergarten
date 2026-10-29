@@ -321,7 +321,7 @@ function calendarGrid(year, month, data, { action, selected = '', hint = '' }) {
 
     grid += `
       <button type="button" class="day${weekendClass}${holiday ? ' is-holiday' : ''}${date === today ? ' is-today' : ''}${date === selected ? ' is-selected' : ''}"
-        data-action="${action}" data-date="${date}"${pressed} aria-label="${label}">
+        data-action="${action}" data-date="${date}"${pressed} aria-label="${esc(label)}">
         <span class="day__num">${day}</span>
         ${holidayLabel ? `<span class="day__holiday">${esc(holidayLabel)}</span>` : ''}
         <span class="day__dots">${dayEvents.slice(0, 3).map((e) => `<i class="day__dot tone-${U.categoryTone(e.category)}"></i>`).join('')}${hasMeal ? '<i class="day__dot day__dot--meal"></i>' : ''}</span>
@@ -623,6 +623,24 @@ function init() {
         break;
       default:
         break;
+    }
+  });
+
+  // 홈 화면에 추가해 두고 며칠씩 켜 두는 경우를 위해:
+  // 날짜가 바뀌었으면 '오늘'을 새로 계산하고, 5분 넘게 다른 앱에 있다 돌아오면 최신 내용을 다시 불러옵니다.
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      hiddenAt = Date.now();
+      return;
+    }
+    if (U.todayYmd() !== today) {
+      location.reload();
+      return;
+    }
+    if (hiddenAt && Date.now() - hiddenAt > 5 * 60 * 1000 && !document.querySelector('.sheet')) {
+      api.clearCache();
+      render();
     }
   });
 
