@@ -4,13 +4,17 @@
  *
  * - 공개 페이지(GitHub Pages)  : GET  ?action=month&year=2026&month=3
  * - 관리자 페이지              : POST {action: 'login' | 'save' | 'delete' | 'bulkAdd', ...}
- * - 관리자 비밀번호            : 프로젝트 설정 > 스크립트 속성 > ADMIN_PASSWORD
+ * - 관리자 비밀번호            : 구글시트 [설정] 탭의 '관리자 비밀번호' 칸 (B2)
  */
 
 const SHEET_NAMES = {
   SCHEDULE: '교육일정',
-  MEAL: '급간식'
+  MEAL: '급간식',
+  SETTINGS: '설정'
 };
+
+// [설정] 탭에서 비밀번호를 찾을 때 쓰는 항목 이름 (A열)
+const PASSWORD_LABEL = '관리자 비밀번호';
 
 const SHEET_HEADERS = {
   SCHEDULE: [['날짜', '구분', '행사명', '내용']],
@@ -71,10 +75,11 @@ function setupSheets() {
 
   createSheetIfNeeded_(ss, SHEET_NAMES.SCHEDULE, SHEET_HEADERS.SCHEDULE);
   createSheetIfNeeded_(ss, SHEET_NAMES.MEAL, SHEET_HEADERS.MEAL);
+  createSettingsSheetIfNeeded_(ss);
 
   Logger.log('관리 시트 주소: ' + ss.getUrl());
   if (!getAdminPassword_()) {
-    Logger.log('⚠️ 관리자 비밀번호가 없습니다. 프로젝트 설정 > 스크립트 속성에 ADMIN_PASSWORD를 추가하세요.');
+    Logger.log('⚠️ 관리자 비밀번호가 없습니다. 구글시트 [설정] 탭의 B2 칸에 비밀번호를 입력하세요.');
   }
   return ss.getUrl();
 }
@@ -288,7 +293,7 @@ function login_(password) {
   const expected = getAdminPassword_();
 
   if (!expected) {
-    throw apiError_('NOT_CONFIGURED', '관리자 비밀번호가 설정되지 않았습니다. Apps Script 스크립트 속성에 ADMIN_PASSWORD를 등록해 주세요.');
+    throw apiError_('NOT_CONFIGURED', '관리자 비밀번호가 설정되지 않았습니다. 구글시트 [설정] 탭의 \'관리자 비밀번호\' 칸(B2)을 채워 주세요.');
   }
 
   const cache = CacheService.getScriptCache();
@@ -336,8 +341,61 @@ function signToken_(payload) {
   return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, '');
 }
 
+let adminPasswordCache_ = null;
+
+/**
+ * 관리자 비밀번호: 구글시트 [설정] 탭 → 비어 있으면 스크립트 속성 ADMIN_PASSWORD.
+ * (한 번의 요청 안에서는 한 번만 읽습니다.)
+ */
 function getAdminPassword_() {
-  return String(PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD') || '').trim();
+  if (adminPasswordCache_ !== null) return adminPasswordCache_;
+
+  const sheet = createSettingsSheetIfNeeded_(getSpreadsheet_());
+  const values = sheet.getDataRange().getValues();
+  let password = '';
+
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim() === PASSWORD_LABEL) {
+      password = String(values[i][1] == null ? '' : values[i][1]).trim();
+      break;
+    }
+  }
+
+  if (!password) {
+    password = String(PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD') || '').trim();
+  }
+
+  adminPasswordCache_ = password;
+  return password;
+}
+
+/**
+ * [설정] 탭이 없으면 만듭니다. B열은 글자 형식이라 0으로 시작하는 비밀번호도 그대로 저장됩니다.
+ */
+function createSettingsSheetIfNeeded_(ss) {
+  let sheet = ss.getSheetByName(SHEET_NAMES.SETTINGS);
+  if (sheet) return sheet;
+
+  sheet = ss.insertSheet(SHEET_NAMES.SETTINGS);
+  sheet.getRange('B:B').setNumberFormat('@');
+  sheet.getRange(1, 1, 2, 3).setValues([
+    ['항목', '값', '설명'],
+    [PASSWORD_LABEL, '', '관리자 페이지 로그인 비밀번호입니다. 바꾸면 이미 로그인한 기기도 다시 로그인해야 합니다.']
+  ]);
+
+  sheet.getRange(1, 1, 1, 3)
+    .setBackground('#2f66bf')
+    .setFontColor('#ffffff')
+    .setFontWeight('bold')
+    .setHorizontalAlignment('center');
+  sheet.getRange(2, 2).setBackground('#fff8d6');
+
+  sheet.setFrozenRows(1);
+  sheet.setColumnWidth(1, 140);
+  sheet.setColumnWidth(2, 200);
+  sheet.setColumnWidth(3, 460);
+
+  return sheet;
 }
 
 function getTokenSecret_() {
