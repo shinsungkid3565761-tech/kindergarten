@@ -539,6 +539,29 @@ button.day:active {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 8px 16px -8px var(--tint);
 }
 
+.day__holiday {
+  max-width: 100%;
+  margin-top: -2px;
+  overflow: hidden;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--sun);
+}
+
+.holiday-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 4px;
+  font-size: 15.5px;
+  font-weight: 750;
+  color: var(--sun);
+}
+
 .day__dots {
   display: flex;
   gap: 3px;
@@ -572,6 +595,10 @@ button.day:active {
   .day__num,
   .day__dots {
     justify-self: center;
+  }
+
+  .day__holiday {
+    font-size: 11px;
   }
 
   .day__labels {

@@ -21,6 +21,11 @@ const LUNCH = [
   ['흑미밥, 어묵국, 닭다리찜, 애호박볶음, 배추김치', '1.5.6.15']
 ];
 const AFTERNOON = [['떡볶이, 보리차', '5.6'], ['고구마맛탕, 우유', '2'], ['옥수수, 요구르트', '2'], ['찐빵, 보리차', '6'], ['과일샐러드, 두유', '1.5'], ['감자전, 보리차', '6']];
+// 예시용 공휴일 (날짜가 고정된 국경일만)
+const FIXED_HOLIDAYS = {
+  '01-01': '신정', '03-01': '삼일절', '05-05': '어린이날', '06-06': '현충일',
+  '08-15': '광복절', '10-03': '개천절', '10-09': '한글날', '12-25': '성탄절'
+};
 const EVENTS = [
   [2, '교육일정', '이달의 주제 활동 시작', '반별 주제 탐색 놀이'],
   [6, '행사', '이달의 생일잔치', '생일 친구 축하 파티 · 고깔모자 준비'],
@@ -54,6 +59,7 @@ function seed() {
       if (d.getDay() === 0 || d.getDay() === 6) continue;
       const date = `${y}-${pad2(m)}-${pad2(day)}`;
       if (data.schedule.some((s) => s.date === date && s.category === '휴원')) continue;
+      if (FIXED_HOLIDAYS[date.slice(5)]) continue;
       const pick = (list) => list[(n + day) % list.length];
       data.meal.push({ date, type: '오전간식', menu: pick(MORNING)[0], allergy: pick(MORNING)[1], note: '' });
       data.meal.push({ date, type: '점심', menu: pick(LUNCH)[0], allergy: pick(LUNCH)[1], note: day % 9 === 0 ? '친환경 식재료 사용' : '' });
@@ -127,7 +133,10 @@ export function createDemoBackend() {
       const byDate = (a, b) => a.date.localeCompare(b.date);
       return {
         schedules: withRows('schedule').filter((s) => s.date.startsWith(prefix)).sort(byDate),
-        meals: withRows('meal').filter((s) => s.date.startsWith(prefix)).sort(byDate)
+        meals: withRows('meal').filter((s) => s.date.startsWith(prefix)).sort(byDate),
+        holidays: Object.entries(FIXED_HOLIDAYS)
+          .filter(([md]) => md.startsWith(pad2(month)))
+          .map(([md, name]) => ({ date: `${year}-${md}`, name }))
       };
     },
     login({ password }) {

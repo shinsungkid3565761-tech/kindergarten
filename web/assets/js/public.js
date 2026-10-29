@@ -85,6 +85,16 @@ function renderEventRow(event, { showDate = false } = {}) {
     </div>`;
 }
 
+/** 공휴일 목록 (예전 서버 응답에는 holidays가 없을 수 있습니다) */
+function holidaysOf(data) {
+  return (data && data.holidays) || [];
+}
+
+function holidayName(data, date) {
+  const holiday = holidaysOf(data).find((h) => h.date === date);
+  return holiday ? holiday.name : '';
+}
+
 function cardTitle(iconName, text, meta = '') {
   return `<header class="card-head"><h2 class="card-title">${icon(iconName, 20)}${esc(text)}</h2>${meta ? `<span class="card-meta">${meta}</span>` : ''}</header>`;
 }
@@ -116,10 +126,19 @@ async function viewHome() {
   homeCalendarData = calendarMonth;
   const schedules = [...current.schedules, ...upcomingMonth.schedules];
   const meals = [...current.meals, ...upcomingMonth.meals];
+  const holidays = [...holidaysOf(current), ...holidaysOf(upcomingMonth)];
+  const todayHoliday = holidayName(current, today);
 
   const todayMeals = U.sortMeals(meals.filter((m) => m.date === today));
   const todayEvents = schedules.filter((s) => s.date === today);
-  const upcoming = schedules.filter((s) => s.date > today && U.dayDiff(today, s.date) <= 45).slice(0, 6);
+  // 다가오는 일정에는 공휴일도 함께 보여줍니다 (같은 날이면 공휴일 먼저).
+  const upcoming = [
+    ...holidays.map((h) => ({ date: h.date, category: '공휴일', title: h.name, detail: '', holiday: true })),
+    ...schedules
+  ]
+    .filter((s) => s.date > today && U.dayDiff(today, s.date) <= 45)
+    .sort((a, b) => a.date.localeCompare(b.date) || Number(Boolean(b.holiday)) - Number(Boolean(a.holiday)))
+    .slice(0, 6);
   const nextMealDate = meals.map((m) => m.date).filter((d) => d > today).sort()[0];
   const nextMeals = nextMealDate && U.dayDiff(today, nextMealDate) <= 7
     ? U.sortMeals(meals.filter((m) => m.date === nextMealDate))
@@ -128,6 +147,7 @@ async function viewHome() {
   const [, m, d] = today.split('-').map(Number);
   const weekend = [0, 6].includes(U.weekdayIndex(today));
   const summary = [
+    todayHoliday,
     todayEvents.length ? `일정 ${todayEvents.length}개` : '',
     todayMeals.length ? `식단 ${todayMeals.length}개` : ''
   ].filter(Boolean).join(' · ') || (weekend ? '즐거운 주말 보내세요' : '오늘 등록된 안내가 없어요');
@@ -167,7 +187,7 @@ async function viewHome() {
           ${cardTitle('meal', '오늘의 급간식')}
           ${todayMeals.length
             ? todayMeals.map(renderMealRow).join('')
-            : renderEmpty({ iconName: 'bowl', title: weekend ? '주말에는 급간식이 없어요' : '오늘 등록된 식단이 없어요' })}
+            : renderEmpty({ iconName: 'bowl', title: todayHoliday ? '공휴일에는 급간식이 없어요' : weekend ? '주말에는 급간식이 없어요' : '오늘 등록된 식단이 없어요' })}
         </section>
         ${nextMeals.length ? `
           <section class="card glass meal-card">
@@ -242,8 +262,10 @@ function openDayPopup(date) {
 function dayDetailBody(date, data) {
   const events = data.schedules.filter((s) => s.date === date);
   const meals = U.sortMeals(data.meals.filter((m) => m.date === date));
+  const holiday = holidayName(data, date);
 
   return `
+    ${holiday ? `<p class="holiday-line"><span class="chip tone-red">공휴일</span>${esc(holiday)}</p>` : ''}
     <h3 class="mini-title">${icon('calendar', 16)}일정</h3>
     ${events.length ? events.map((e) => renderEventRow(e)).join('') : '<p class="muted-line">등록된 일정이 없어요</p>'}
     <h3 class="mini-title">${icon('meal', 16)}급간식</h3>
@@ -287,9 +309,11 @@ function calendarGrid(year, month, data, { action, selected = '', hint = '' }) {
 
     const dayEvents = events.get(date) || [];
     const hasMeal = meals.has(date);
-    const holiday = dayEvents.some((e) => U.categoryTone(e.category) === 'red');
+    const holidayLabel = holidayName(data, date);
+    const holiday = Boolean(holidayLabel) || dayEvents.some((e) => U.categoryTone(e.category) === 'red');
     const label = [
       U.formatDateLabel(date),
+      holidayLabel,
       dayEvents.length ? `일정 ${dayEvents.length}개` : '',
       hasMeal ? '식단 있음' : ''
     ].filter(Boolean).join(', ');
@@ -299,6 +323,7 @@ function calendarGrid(year, month, data, { action, selected = '', hint = '' }) {
       <button type="button" class="day${weekendClass}${holiday ? ' is-holiday' : ''}${date === today ? ' is-today' : ''}${date === selected ? ' is-selected' : ''}"
         data-action="${action}" data-date="${date}"${pressed} aria-label="${label}">
         <span class="day__num">${day}</span>
+        ${holidayLabel ? `<span class="day__holiday">${esc(holidayLabel)}</span>` : ''}
         <span class="day__dots">${dayEvents.slice(0, 3).map((e) => `<i class="day__dot tone-${U.categoryTone(e.category)}"></i>`).join('')}${hasMeal ? '<i class="day__dot day__dot--meal"></i>' : ''}</span>
         <span class="day__labels">${dayEvents.slice(0, 2).map((e) => `<span class="day__label tone-${U.categoryTone(e.category)}">${esc(e.title)}</span>`).join('')}</span>
       </button>`;

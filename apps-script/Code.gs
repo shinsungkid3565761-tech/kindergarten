@@ -4,7 +4,9 @@
  *
  * - 공개 페이지(GitHub Pages)  : GET  ?action=month&year=2026&month=3
  * - 관리자 페이지              : POST {action: 'login' | 'save' | 'delete' | 'bulkAdd', ...}
- * - 관리자 비밀번호            : 구글시트 [설정] 탭의 '관리자 비밀번호' 칸 (B2)
+ * - 관리자 비밀번호            : 구글시트 [설정] 탭의 '관리자 비밀번호' 칸
+ * - 공휴일 (선택)               : [설정] 탭의 '공휴일 API 키' 칸에 공공데이터포털 인증키
+ *                                 (한국천문연구원 특일 정보 = 네이버 달력과 같은 출처)
  */
 
 const SHEET_NAMES = {
@@ -13,8 +15,18 @@ const SHEET_NAMES = {
   SETTINGS: '설정'
 };
 
-// [설정] 탭에서 비밀번호를 찾을 때 쓰는 항목 이름 (A열)
+// [설정] 탭 항목 이름 (A열) - 이 이름으로 B열 값을 찾습니다.
 const PASSWORD_LABEL = '관리자 비밀번호';
+const HOLIDAY_KEY_LABEL = '공휴일 API 키';
+
+const SETTING_ROWS = [
+  [PASSWORD_LABEL, '관리자 페이지 로그인 비밀번호입니다. 바꾸면 이미 로그인한 기기도 다시 로그인해야 합니다.'],
+  [HOLIDAY_KEY_LABEL, '(선택) 공공데이터포털 \'한국천문연구원_특일 정보\'의 일반 인증키(Decoding)를 넣으면 달력에 공휴일이 표시됩니다.']
+];
+
+// 한국천문연구원 특일 정보 - 공휴일
+const HOLIDAY_API_URL = 'https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo';
+const HOLIDAY_CACHE_SEC = 21600;             // 공휴일 캐시 (6시간)
 
 const SHEET_HEADERS = {
   SCHEDULE: [['날짜', '구분', '행사명', '내용']],
@@ -79,7 +91,7 @@ function setupSheets() {
 
   Logger.log('관리 시트 주소: ' + ss.getUrl());
   if (!getAdminPassword_()) {
-    Logger.log('⚠️ 관리자 비밀번호가 없습니다. 구글시트 [설정] 탭의 B2 칸에 비밀번호를 입력하세요.');
+    Logger.log('⚠️ 관리자 비밀번호가 없습니다. 구글시트 [설정] 탭의 \'관리자 비밀번호\' 칸에 입력하세요.');
   }
   return ss.getUrl();
 }
@@ -136,8 +148,11 @@ function handleRequest_(method, params) {
       case 'ping':
         return ok_({ school: SCHOOL_NAME, time: new Date().toISOString() });
 
-      case 'month':
-        return ok_(getMonthDataCached_(params.year, params.month));
+      case 'month': {
+        const data = getMonthDataCached_(params.year, params.month);
+        data.holidays = getHolidays_(Number(params.year), Number(params.month));
+        return ok_(data);
+      }
 
       case 'login':
         return ok_(login_(params.password));
@@ -293,7 +308,7 @@ function login_(password) {
   const expected = getAdminPassword_();
 
   if (!expected) {
-    throw apiError_('NOT_CONFIGURED', '관리자 비밀번호가 설정되지 않았습니다. 구글시트 [설정] 탭의 \'관리자 비밀번호\' 칸(B2)을 채워 주세요.');
+    throw apiError_('NOT_CONFIGURED', '관리자 비밀번호가 설정되지 않았습니다. 구글시트 [설정] 탭의 \'관리자 비밀번호\' 칸을 채워 주세요.');
   }
 
   const cache = CacheService.getScriptCache();
@@ -341,61 +356,170 @@ function signToken_(payload) {
   return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, '');
 }
 
-let adminPasswordCache_ = null;
+let settingsCache_ = null;
 
 /**
- * 관리자 비밀번호: 구글시트 [설정] 탭 → 비어 있으면 스크립트 속성 ADMIN_PASSWORD.
- * (한 번의 요청 안에서는 한 번만 읽습니다.)
+ * [설정] 탭의 항목 → 값 (한 번의 요청 안에서는 한 번만 읽습니다.)
  */
-function getAdminPassword_() {
-  if (adminPasswordCache_ !== null) return adminPasswordCache_;
+function getSettings_() {
+  if (settingsCache_) return settingsCache_;
 
-  const sheet = createSettingsSheetIfNeeded_(getSpreadsheet_());
-  const values = sheet.getDataRange().getValues();
-  let password = '';
+  const values = createSettingsSheetIfNeeded_(getSpreadsheet_()).getDataRange().getValues();
+  const settings = {};
 
-  for (let i = 0; i < values.length; i++) {
-    if (String(values[i][0]).trim() === PASSWORD_LABEL) {
-      password = String(values[i][1] == null ? '' : values[i][1]).trim();
-      break;
+  values.forEach(function(row) {
+    const label = String(row[0]).trim();
+    if (label && !(label in settings)) {
+      settings[label] = String(row[1] == null ? '' : row[1]).trim();
     }
-  }
+  });
 
-  if (!password) {
-    password = String(PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD') || '').trim();
-  }
+  settingsCache_ = settings;
+  return settings;
+}
 
-  adminPasswordCache_ = password;
-  return password;
+function getSetting_(label) {
+  return getSettings_()[label] || '';
 }
 
 /**
- * [설정] 탭이 없으면 만듭니다. B열은 글자 형식이라 0으로 시작하는 비밀번호도 그대로 저장됩니다.
+ * 관리자 비밀번호: 구글시트 [설정] 탭 → 비어 있으면 스크립트 속성 ADMIN_PASSWORD.
+ */
+function getAdminPassword_() {
+  return getSetting_(PASSWORD_LABEL) ||
+    String(PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD') || '').trim();
+}
+
+/**
+ * [설정] 탭이 없으면 만들고, 빠진 항목 행이 있으면 아래에 채워 넣습니다.
+ * B열은 글자 형식이라 0으로 시작하는 비밀번호도 그대로 저장됩니다.
  */
 function createSettingsSheetIfNeeded_(ss) {
   let sheet = ss.getSheetByName(SHEET_NAMES.SETTINGS);
-  if (sheet) return sheet;
 
-  sheet = ss.insertSheet(SHEET_NAMES.SETTINGS);
-  sheet.getRange('B:B').setNumberFormat('@');
-  sheet.getRange(1, 1, 2, 3).setValues([
-    ['항목', '값', '설명'],
-    [PASSWORD_LABEL, '', '관리자 페이지 로그인 비밀번호입니다. 바꾸면 이미 로그인한 기기도 다시 로그인해야 합니다.']
-  ]);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAMES.SETTINGS);
+    sheet.getRange('B:B').setNumberFormat('@');
+    sheet.getRange(1, 1, 1, 3).setValues([['항목', '값', '설명']]);
 
-  sheet.getRange(1, 1, 1, 3)
-    .setBackground('#2f66bf')
-    .setFontColor('#ffffff')
-    .setFontWeight('bold')
-    .setHorizontalAlignment('center');
-  sheet.getRange(2, 2).setBackground('#fff8d6');
+    sheet.getRange(1, 1, 1, 3)
+      .setBackground('#2f66bf')
+      .setFontColor('#ffffff')
+      .setFontWeight('bold')
+      .setHorizontalAlignment('center');
 
-  sheet.setFrozenRows(1);
-  sheet.setColumnWidth(1, 140);
-  sheet.setColumnWidth(2, 200);
-  sheet.setColumnWidth(3, 460);
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(1, 140);
+    sheet.setColumnWidth(2, 260);
+    sheet.setColumnWidth(3, 520);
+  }
+
+  const labels = sheet.getDataRange().getValues().map(function(row) {
+    return String(row[0]).trim();
+  });
+
+  SETTING_ROWS.forEach(function(setting) {
+    if (labels.indexOf(setting[0]) !== -1) return;
+
+    const rowNum = sheet.getLastRow() + 1;
+    sheet.getRange(rowNum, 1, 1, 3).setValues([[setting[0], '', setting[1]]]);
+    sheet.getRange(rowNum, 2).setBackground('#fff8d6');
+  });
 
   return sheet;
+}
+
+// ─── 공휴일 ──────────────────────────────────
+
+/**
+ * 해당 월의 공휴일 [{ date: 'yyyy-MM-dd', name: '개천절' }]
+ * 키가 없거나 불러오지 못하면 빈 목록을 돌려줘 일정·급간식 표시는 그대로 됩니다.
+ */
+function getHolidays_(year, month) {
+  const cache = CacheService.getScriptCache();
+  // 시트를 고치면(키 입력 포함) 캐시 버전이 바뀌어 바로 다시 불러옵니다.
+  const cacheKey = 'holidays_' + getCacheVersion_() + '_' + year + '-' + String(month).padStart(2, '0');
+  const cached = cache.get(cacheKey);
+
+  if (cached) return JSON.parse(cached);
+
+  const key = getSetting_(HOLIDAY_KEY_LABEL);
+  let holidays = [];
+  let ttl = HOLIDAY_CACHE_SEC;
+
+  if (!key) {
+    ttl = 300;
+  } else {
+    try {
+      holidays = fetchHolidays_(key, year, month);
+    } catch (err) {
+      console.warn('공휴일 정보를 불러오지 못했습니다: ' + err.message);
+      ttl = 600;
+    }
+  }
+
+  cache.put(cacheKey, JSON.stringify(holidays), ttl);
+  return holidays;
+}
+
+function fetchHolidays_(key, year, month) {
+  // 'Encoding' 키(%가 들어 있음)는 그대로, 'Decoding' 키는 주소용으로 바꿔서 보냅니다.
+  const serviceKey = key.indexOf('%') !== -1 ? key : encodeURIComponent(key);
+  const url = HOLIDAY_API_URL +
+    '?ServiceKey=' + serviceKey +
+    '&solYear=' + year +
+    '&solMonth=' + String(month).padStart(2, '0') +
+    '&numOfRows=50&_type=json';
+
+  const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  const text = response.getContentText();
+  let json;
+
+  try {
+    json = JSON.parse(text);
+  } catch (err) {
+    throw new Error('응답 코드 ' + response.getResponseCode() + ': ' + text.slice(0, 300));
+  }
+
+  const header = json.response && json.response.header;
+  if (!header || header.resultCode !== '00') {
+    throw new Error((header && header.resultMsg) || '알 수 없는 응답입니다.');
+  }
+
+  // 결과가 1건이면 배열이 아닌 객체, 0건이면 빈 문자열로 옵니다.
+  const items = json.response.body && json.response.body.items && json.response.body.items.item;
+  const list = !items ? [] : Array.isArray(items) ? items : [items];
+
+  return list
+    .filter(function(item) { return item.isHoliday === 'Y'; })
+    .map(function(item) {
+      const d = String(item.locdate);
+      return {
+        date: d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6, 8),
+        name: String(item.dateName || '공휴일').trim()
+      };
+    });
+}
+
+/**
+ * 편집기에서 실행해 '공휴일 API 키'가 동작하는지 확인합니다. (결과는 실행 로그에 표시)
+ */
+function testHolidays() {
+  const key = getSetting_(HOLIDAY_KEY_LABEL);
+
+  if (!key) {
+    Logger.log('⚠️ [설정] 탭의 \'공휴일 API 키\' 칸이 비어 있습니다.');
+    return;
+  }
+
+  const year = new Date().getFullYear();
+  for (let month = 1; month <= 12; month++) {
+    const holidays = fetchHolidays_(key, year, month);
+    Logger.log(year + '년 ' + month + '월: ' + (holidays.map(function(h) {
+      return h.date.slice(5) + ' ' + h.name;
+    }).join(', ') || '없음'));
+  }
+  invalidateCache_();
 }
 
 function getTokenSecret_() {

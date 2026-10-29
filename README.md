@@ -45,6 +45,19 @@ GitHub Pages (web/)  ──  GET ?action=month ──────────▶
 
 확인: 브라우저에서 `웹앱주소?action=ping` 을 열었을 때 `{"ok":true,...}` 가 보이면 성공입니다.
 
+### (선택) 공휴일 표시
+
+달력에 공휴일 · 대체공휴일 · 임시공휴일을 빨간 글씨로 표시합니다. 네이버 달력과 같은 출처인 **한국천문연구원 특일 정보**(공공데이터포털)를 씁니다.
+
+1. [공공데이터포털](https://www.data.go.kr)에 로그인하고 **한국천문연구원_특일 정보**를 검색해 **활용신청**합니다. (자동 승인)
+2. **마이페이지 → 데이터활용 → Open API → 활용신청 현황**에서 해당 API를 열고 **일반 인증키(Decoding)** 를 복사합니다.
+3. 구글시트 **`설정` 탭 → `공휴일 API 키`** 의 B칸에 붙여넣습니다.
+4. Apps Script 편집기에서 **`testHolidays`** 를 실행합니다. 처음에는 "외부 서비스 연결" 권한을 허용해야 하고, 실행 로그에 올해 공휴일 목록이 나오면 성공입니다.
+   - `SERVICE_KEY_IS_NOT_REGISTERED_ERROR` 가 나오면 새 키가 아직 활성화되지 않은 것입니다. 1시간쯤 뒤 다시 실행하세요.
+5. **배포 관리 → ✏️ → 새 버전**으로 다시 배포합니다.
+
+키를 넣지 않아도 일정 · 급간식은 그대로 보이고 공휴일만 표시되지 않습니다. 공휴일은 6시간 동안 저장해 두고 쓰기 때문에 API를 많이 부르지 않습니다.
+
 ## 2. GitHub Pages 배포
 
 1. 이 저장소 **Settings → Pages → Build and deployment → Source: GitHub Actions** 로 설정합니다.
@@ -96,7 +109,7 @@ cd web && python3 -m http.server 8000
 | 요청 | 설명 |
 |---|---|
 | `GET ?action=ping` | 동작 확인 |
-| `GET ?action=month&year=2026&month=3` | 해당 월 `{ schedules: [...], meals: [...] }` (각 항목에 시트 행 번호 `row` 포함) |
+| `GET ?action=month&year=2026&month=3` | 해당 월 `{ schedules: [...], meals: [...], holidays: [...] }` (일정 · 급간식에는 시트 행 번호 `row` 포함, 공휴일 키가 없으면 `holidays`는 빈 목록) |
 | `POST {action:"login", password}` | 관리자 토큰 발급 (12시간) |
 | `POST {action:"save", token, kind, item, row?, original?}` | 추가(`row` 없음) 또는 수정. 수정 시 `original` 과 현재 시트 값이 다르면 `CONFLICT` 로 거부해 덮어쓰기를 막습니다. |
 | `POST {action:"delete", token, kind, row, original}` | 삭제 |
