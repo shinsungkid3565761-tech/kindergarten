@@ -282,3 +282,18 @@ export function el(html) {
   template.innerHTML = html.trim();
   return template.content.firstElementChild;
 }
+
+/** '햇님반, 별님반' → ['햇님반', '별님반'] (비어 있으면 전체 반 대상) */
+export function parseTargets(text) {
+  return String(text || '')
+    .split(/[,，·/\n]/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+/** 반을 고르지 않았거나, 대상 반이 비어 있거나(전체), 우리 반이 포함된 일정이면 true */
+export function isForClass(event, className) {
+  if (!className) return true;
+  const targets = parseTargets(event.target);
+  return !targets.length || targets.includes(className);
+}

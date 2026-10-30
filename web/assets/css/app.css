@@ -842,27 +842,6 @@ button.day:active {
   color: var(--text-2);
 }
 
-.allergen-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.allergen-list li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 14px;
-  font-size: 14.5px;
-  font-weight: 650;
-  background: var(--field-bg);
-  box-shadow: inset 0 0 0 1px var(--separator);
-}
-
 .allergen-list__num {
   display: grid;
   place-items: center;
@@ -1306,4 +1285,270 @@ textarea.input.mono {
 
 .editor .choice-chips + .input {
   margin-top: 4px;
+}
+
+/* ---------- 우리 반 선택 ---------- */
+
+.class-pill {
+  appearance: none;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  margin-top: 12px;
+  padding: 0 14px 0 12px;
+  border-radius: 999px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  transition: transform 0.4s var(--spring);
+}
+
+.class-pill:active {
+  transform: scale(0.95);
+}
+
+.class-pill b {
+  font-weight: 800;
+  color: var(--tint);
+}
+
+.class-pill svg:first-child {
+  color: var(--tint);
+}
+
+.choice-chips--lg {
+  gap: 8px;
+}
+
+.choice-chips--lg .choice-chip {
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 15.5px;
+}
+
+/* ---------- 우리 아이 알레르기 ---------- */
+
+.meal-row.has-alert .meal-row__icon {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--danger) 55%, transparent);
+}
+
+.alert-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 4px 0 2px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 750;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.menu-item--alert {
+  color: var(--danger);
+  text-decoration: underline wavy color-mix(in srgb, var(--danger) 60%, transparent);
+  text-underline-offset: 4px;
+  text-decoration-thickness: 1px;
+}
+
+.allergy-hit {
+  font-weight: 800;
+  color: var(--danger);
+}
+
+.allergy-hit .allergy-num {
+  color: #fff;
+  background: var(--danger);
+}
+
+.btn.has-allergy {
+  color: var(--danger);
+}
+
+.allergen-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.allergen-pick {
+  appearance: none;
+  border: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  font-size: 14.5px;
+  font-weight: 650;
+  text-align: left;
+  background: var(--field-bg);
+  box-shadow: inset 0 0 0 1px var(--separator);
+  transition: transform 0.4s var(--spring), background 0.2s, color 0.2s;
+}
+
+.allergen-pick:active {
+  transform: scale(0.95);
+}
+
+.allergen-pick[aria-pressed="true"] {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--field-bg));
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--danger) 70%, transparent);
+}
+
+.allergen-pick[aria-pressed="true"] .allergen-list__num {
+  background: var(--danger);
+}
+
+.allergen-clear {
+  margin-top: 14px;
+}
+
+/* ---------- 월간 인쇄 (관리자) ---------- */
+
+#print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  body > *:not(#print-root) {
+    display: none !important;
+  }
+
+  #print-root {
+    display: block;
+    color: #111;
+    font-family: var(--font);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .pc-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 3mm;
+    padding-bottom: 2.5mm;
+    border-bottom: 0.6mm solid #2f66bf;
+  }
+
+  .pc-school {
+    margin: 0;
+    font-size: 10pt;
+    font-weight: 800;
+    color: #2f66bf;
+  }
+
+  .pc-head h1 {
+    margin: 0.8mm 0 0;
+    font-size: 17pt;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .pc-printed {
+    margin: 0;
+    font-size: 8pt;
+    color: #666;
+  }
+
+  .pc-table {
+    /* 겹친 테두리의 바깥 절반이 종이 끝에서 잘리지 않도록 살짝 안쪽으로 */
+    width: calc(100% - 1mm);
+    margin: 0 auto;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  .pc-table th {
+    padding: 1.4mm;
+    font-size: 9pt;
+    font-weight: 800;
+    background: #eef3fb;
+    border: 0.25mm solid #c5d0e2;
+  }
+
+  .pc-table td {
+    height: 29mm;
+    padding: 1.4mm 1.6mm;
+    vertical-align: top;
+    font-size: 7.6pt;
+    line-height: 1.32;
+    border: 0.25mm solid #c5d0e2;
+    word-break: keep-all;
+  }
+
+  .pc-table tr {
+    break-inside: avoid;
+  }
+
+  .pc-table td.is-empty {
+    background: #f6f7f9;
+  }
+
+  .pc-table .is-sun,
+  .pc-table .is-sun .pc-date b,
+  .pc-table .is-holiday .pc-date b {
+    color: #d23b3b;
+  }
+
+  .pc-table .is-sat,
+  .pc-table .is-sat .pc-date b {
+    color: #2f6fdc;
+  }
+
+  .pc-date {
+    display: flex;
+    align-items: baseline;
+    gap: 1.5mm;
+    margin-bottom: 0.8mm;
+  }
+
+  .pc-date b {
+    font-size: 9.5pt;
+    font-weight: 800;
+    color: #111;
+  }
+
+  .pc-holiday {
+    font-size: 7.4pt;
+    font-weight: 800;
+    color: #d23b3b;
+  }
+
+  .pc-item + .pc-item {
+    margin-top: 0.7mm;
+  }
+
+  .pc-type {
+    margin-right: 1.2mm;
+    font-weight: 800;
+    color: #2f66bf;
+  }
+
+  .pc-allergy {
+    font-size: 6.6pt;
+    color: #777;
+  }
+
+  .pc-foot {
+    margin: 2mm 0 0;
+    font-size: 7.4pt;
+    color: #444;
+  }
 }

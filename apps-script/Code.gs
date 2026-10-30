@@ -7,6 +7,8 @@
  * - 관리자 비밀번호            : 구글시트 [설정] 탭의 '관리자 비밀번호' 칸
  * - 공휴일 (선택)               : [설정] 탭의 '공휴일 API 키' 칸에 공공데이터포털 인증키
  *                                 (한국천문연구원 특일 정보 = 네이버 달력과 같은 출처)
+ * - 반별 일정 (선택)            : [설정] 탭의 '반 목록'에 반 이름을 쉼표로 적고,
+ *                                 [교육일정] 탭 '대상 반' 칸에 반 이름을 적습니다. (비우면 전체)
  */
 
 const SHEET_NAMES = {
@@ -18,10 +20,12 @@ const SHEET_NAMES = {
 // [설정] 탭 항목 이름 (A열) - 이 이름으로 B열 값을 찾습니다.
 const PASSWORD_LABEL = '관리자 비밀번호';
 const HOLIDAY_KEY_LABEL = '공휴일 API 키';
+const CLASS_LIST_LABEL = '반 목록';
 
 const SETTING_ROWS = [
   [PASSWORD_LABEL, '관리자 페이지 로그인 비밀번호입니다. 바꾸면 이미 로그인한 기기도 다시 로그인해야 합니다.'],
-  [HOLIDAY_KEY_LABEL, '(선택) 공공데이터포털 \'한국천문연구원_특일 정보\'의 일반 인증키(Decoding)를 넣으면 달력에 공휴일이 표시됩니다.']
+  [HOLIDAY_KEY_LABEL, '(선택) 공공데이터포털 \'한국천문연구원_특일 정보\'의 일반 인증키(Decoding)를 넣으면 달력에 공휴일이 표시됩니다.'],
+  [CLASS_LIST_LABEL, '(선택) 반 이름을 쉼표로 구분해 적습니다. 예: 햇님반, 달님반, 별님반 — 학부모가 우리 반 일정만 골라 볼 수 있습니다.']
 ];
 
 // 한국천문연구원 특일 정보 - 공휴일
@@ -29,7 +33,7 @@ const HOLIDAY_API_URL = 'https://apis.data.go.kr/B090041/openapi/service/SpcdeIn
 const HOLIDAY_CACHE_SEC = 21600;             // 공휴일 캐시 (6시간)
 
 const SHEET_HEADERS = {
-  SCHEDULE: [['날짜', '구분', '행사명', '내용']],
+  SCHEDULE: [['날짜', '구분', '행사명', '내용', '대상 반']],
   MEAL: [['날짜', '구분', '메뉴', '알레르기 정보', '비고']]
 };
 
@@ -52,7 +56,8 @@ const KINDS = {
       { key: 'date',     max: 10 },
       { key: 'category', max: 30 },
       { key: 'title',    max: 100 },
-      { key: 'detail',   max: 1000 }
+      { key: 'detail',   max: 1000 },
+      { key: 'target',   max: 100 }
     ],
     categoryKey: 'category',
     defaultCategory: '교육일정',
@@ -202,8 +207,19 @@ function getMonthData(year, month) {
 
   return {
     schedules: sortByDate_(schedules),
-    meals: sortByDate_(meals)
+    meals: sortByDate_(meals),
+    classes: getClassList_()
   };
+}
+
+/**
+ * [설정] 탭 '반 목록' → ['햇님반', '달님반']
+ */
+function getClassList_() {
+  return getSetting_(CLASS_LIST_LABEL)
+    .split(/[,，·\n]/)
+    .map(function(name) { return name.trim(); })
+    .filter(function(name, index, list) { return name && list.indexOf(name) === index; });
 }
 
 /**
@@ -256,7 +272,8 @@ function scheduleFromRow_(row) {
     date: date,
     category: String(row[1] || '교육일정'),
     title: String(row[2] || ''),
-    detail: String(row[3] || '')
+    detail: String(row[3] || ''),
+    target: String(row[4] || '')
   };
 }
 
@@ -801,23 +818,36 @@ function createSheetIfNeeded_(ss, sheetName, headers) {
     sheet = ss.insertSheet(sheetName);
   }
 
+  const columnCount = headers[0].length;
+
   if (sheet.getLastRow() === 0) {
-    const columnCount = headers[0].length;
-
     sheet.getRange(1, 1, 1, columnCount).setValues(headers);
-
-    sheet.getRange(1, 1, 1, columnCount)
-      .setBackground('#2f66bf')
-      .setFontColor('#ffffff')
-      .setFontWeight('bold')
-      .setHorizontalAlignment('center');
+    styleHeader_(sheet.getRange(1, 1, 1, columnCount));
 
     sheet.setFrozenRows(1);
     sheet.autoResizeColumns(1, columnCount);
     sheet.getRange('A:A').setNumberFormat('yyyy-mm-dd');
+    return sheet;
   }
 
+  // 나중에 추가된 열(예: 교육일정의 '대상 반')은 기존 시트에도 제목을 채워 줍니다.
+  const current = sheet.getRange(1, 1, 1, columnCount).getValues()[0];
+  headers[0].forEach(function(title, index) {
+    if (String(current[index]).trim()) return;
+    const cell = sheet.getRange(1, index + 1);
+    cell.setValue(title);
+    styleHeader_(cell);
+  });
+
   return sheet;
+}
+
+function styleHeader_(range) {
+  range
+    .setBackground('#2f66bf')
+    .setFontColor('#ffffff')
+    .setFontWeight('bold')
+    .setHorizontalAlignment('center');
 }
 
 /**

@@ -3,9 +3,9 @@
 
 import { ymd, pad2 } from './util.js';
 
-const STORAGE_KEY = 'kg-demo-data-v1';
+const STORAGE_KEY = 'kg-demo-data-v2';
 const FIELDS = {
-  schedule: ['date', 'category', 'title', 'detail'],
+  schedule: ['date', 'category', 'title', 'detail', 'target'],
   meal: ['date', 'type', 'menu', 'allergy', 'note']
 };
 const REQUIRED = { schedule: ['title', '행사명'], meal: ['menu', '메뉴'] };
@@ -26,12 +26,14 @@ const FIXED_HOLIDAYS = {
   '01-01': '신정', '03-01': '삼일절', '05-05': '어린이날', '06-06': '현충일',
   '08-15': '광복절', '10-03': '개천절', '10-09': '한글날', '12-25': '성탄절'
 };
+const DEMO_CLASSES = ['햇님반', '달님반', '별님반'];
 const EVENTS = [
   [2, '교육일정', '이달의 주제 활동 시작', '반별 주제 탐색 놀이'],
   [6, '행사', '이달의 생일잔치', '생일 친구 축하 파티 · 고깔모자 준비'],
   [10, '교육일정', '안전교육 (교통안전)', '횡단보도 건너기 체험'],
   [14, '부모참여', '부모참여수업', '오전 10시 · 각 반 교실'],
-  [17, '체험학습', '현장체험학습', '도시락 · 물병 지참'],
+  [17, '체험학습', '현장체험학습', '도시락 · 물병 지참', '햇님반, 달님반'],
+  [19, '교육일정', '숲 체험', '편한 운동화', '별님반'],
   [22, '교육일정', '소방 대피 훈련', ''],
   [27, '휴원', '재량휴업일', '가정 보육 부탁드립니다']
 ];
@@ -46,11 +48,11 @@ function seed() {
     const m = first.getMonth() + 1;
     const days = new Date(y, m, 0).getDate();
 
-    EVENTS.forEach(([day, category, title, detail]) => {
+    EVENTS.forEach(([day, category, title, detail, target = '']) => {
       const d = new Date(y, m - 1, Math.min(day, days));
       while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
       if (d.getMonth() !== m - 1) return;
-      data.schedule.push({ date: ymd(d), category, title, detail });
+      data.schedule.push({ date: ymd(d), category, title, detail, target });
     });
 
     let n = 0;
@@ -134,6 +136,7 @@ export function createDemoBackend() {
       return {
         schedules: withRows('schedule').filter((s) => s.date.startsWith(prefix)).sort(byDate),
         meals: withRows('meal').filter((s) => s.date.startsWith(prefix)).sort(byDate),
+        classes: DEMO_CLASSES,
         holidays: Object.entries(FIXED_HOLIDAYS)
           .filter(([md]) => md.startsWith(pad2(month)))
           .map(([md, name]) => ({ date: `${year}-${md}`, name }))

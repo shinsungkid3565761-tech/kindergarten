@@ -26,6 +26,8 @@ const PATHS = {
   refresh: '<path d="M19.5 12a7.5 7.5 0 1 1-2.3-5.4"/><path d="M19.5 4.5v4.2h-4.2"/>',
   external: '<path d="M14 4.5h5.5V10M19.5 4.5 11 13"/><path d="M18 14v4c0 1.1-.9 2-2 2H6c-1.1 0-2-.9-2-2V8c0-1.1.9-2 2-2h4"/>',
   today: '<rect x="3.5" y="5" width="17" height="15.5" rx="3.2"/><path d="M3.5 9.8h17M8 3v4M16 3v4"/><rect x="10" y="12.6" width="4" height="4" rx="1" fill="currentColor" stroke="none"/>',
+  print: '<path d="M7 9V4.5c0-.6.4-1 1-1h8c.6 0 1 .4 1 1V9"/><rect x="3.5" y="9" width="17" height="8" rx="2.4"/><path d="M7 14.5h10V20c0 .6-.4 1-1 1H8c-.6 0-1-.4-1-1v-5.5Z"/><circle cx="17" cy="12" r=".9" fill="currentColor" stroke="none"/>',
+  users: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="16.8" cy="9.3" r="2.5"/><path d="M15.8 14.7c2.4-.3 4.3 1.2 4.9 4.3"/>',
   copy: '<rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2.4"/><path d="M15.5 8.5V6.4c0-1.3-1.1-2.4-2.4-2.4H6.4C5.1 4 4 5.1 4 6.4v6.7c0 1.3 1.1 2.4 2.4 2.4h2.1"/>'
 };
 

@@ -15,14 +15,14 @@ const KINDS = {
   schedule: {
     label: '교육일정',
     listKey: 'schedules',
-    fields: ['date', 'category', 'title', 'detail'],
-    columns: ['날짜', '구분', '행사명', '내용'],
+    fields: ['date', 'category', 'title', 'detail', 'target'],
+    columns: ['날짜', '구분', '행사명', '내용', '대상 반'],
     categoryKey: 'category',
     defaultCategory: '교육일정',
     presets: U.SCHEDULE_CATEGORY_PRESETS,
     requiredKey: 'title',
     requiredLabel: '행사명',
-    example: '2026-03-03\t행사\t입학식\t오전 10시 · 유희실\n2026-03-10\t교육일정\t안전교육\t교통안전 체험'
+    example: '2026-03-03\t행사\t입학식\t오전 10시 · 유희실\t\n2026-03-10\t체험학습\t고구마 캐기\t긴 옷 · 장갑\t햇님반, 달님반'
   },
   meal: {
     label: '급간식',
@@ -180,12 +180,14 @@ function buildToolbar() {
   actions.innerHTML = `
     <button type="button" class="btn btn--tint" data-act="add">${icon('plus', 18)}새로 추가</button>
     <button type="button" class="btn" data-act="bulk">${icon('paste', 18)}엑셀 붙여넣기</button>
+    <button type="button" class="btn" data-act="print">${icon('print', 18)}월간 인쇄</button>
     <button type="button" class="btn icon-btn" data-act="refresh" aria-label="새로고침" title="새로고침">${icon('refresh', 18)}</button>`;
 
   actions.addEventListener('click', (event) => {
     const act = event.target.closest('[data-act]')?.dataset.act;
     if (act === 'add') openEditor(null);
     if (act === 'bulk') openBulk();
+    if (act === 'print') printMonth();
     if (act === 'refresh') load({ force: true });
   });
 }
@@ -214,7 +216,13 @@ function itemSummary(kind, item) {
     const sub = [item.allergy ? `알레르기 ${item.allergy}` : '', item.note].filter(Boolean).join(' · ');
     return { tone: U.mealTone(item.type), category: item.type, title: menu || item.menu, sub };
   }
-  return { tone: U.categoryTone(item.category), category: item.category, title: item.title, sub: item.detail };
+  return {
+    tone: U.categoryTone(item.category),
+    category: item.category,
+    title: item.title,
+    sub: item.detail,
+    targets: U.parseTargets(item.target)
+  };
 }
 
 function renderList() {
@@ -246,7 +254,8 @@ function renderList() {
           return `
             <button type="button" class="admin-item" data-row="${item.row}">
               <span class="admin-item__main">
-                <span class="admin-item__meta"><span class="chip tone-${s.tone}">${esc(s.category)}</span></span>
+                <span class="admin-item__meta"><span class="chip tone-${s.tone}">${esc(s.category)}</span>${
+                  s.targets && s.targets.length ? `<span class="chip tone-gray">${icon('users', 12)}${esc(s.targets.join(' · '))}</span>` : ''}</span>
                 <span class="admin-item__title">${esc(s.title)}</span>
                 ${s.sub ? `<span class="admin-item__sub">${esc(s.sub)}</span>` : ''}
               </span>
@@ -357,7 +366,37 @@ function bindAllergenPicker(form) {
   sync();
 }
 
-function scheduleFields(item, editing, categories) {
+function targetField(item, classes) {
+  return `
+    <div class="field">
+      <span class="field__label">대상 반</span>
+      ${classes.length ? `<div class="choice-chips">${classes.map((name) =>
+        `<button type="button" class="choice-chip" data-target-class="${esc(name)}" aria-pressed="false">${esc(name)}</button>`).join('')}</div>` : ''}
+      <input class="input" name="target" value="${esc(item.target || '')}" maxlength="100" placeholder="비워 두면 전체 반" aria-label="대상 반">
+      <span class="field__hint">${classes.length
+        ? '여러 반을 고를 수 있어요. 아무 반도 고르지 않으면 모든 반에 보이는 일정이에요.'
+        : '구글시트 [설정] 탭의 \'반 목록\'에 반 이름을 적으면 여기서 눌러서 고를 수 있어요. 비워 두면 전체 반 일정이에요.'}</span>
+    </div>`;
+}
+
+function bindTargetChips(form) {
+  const input = form.elements.target;
+  const chips = [...form.querySelectorAll('[data-target-class]')];
+  const sync = () => {
+    const selected = U.parseTargets(input.value);
+    chips.forEach((chip) => chip.setAttribute('aria-pressed', String(selected.includes(chip.dataset.targetClass))));
+  };
+  chips.forEach((chip) => chip.addEventListener('click', () => {
+    const selected = U.parseTargets(input.value);
+    const name = chip.dataset.targetClass;
+    input.value = (selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name]).join(', ');
+    sync();
+  }));
+  input.addEventListener('input', sync);
+  sync();
+}
+
+function scheduleFields(item, editing, categories, classes) {
   return `
     <div class="form-row form-row--2">
       <label class="field"><span class="field__label" data-date-label>날짜</span>
@@ -378,7 +417,8 @@ function scheduleFields(item, editing, categories) {
     <label class="field"><span class="field__label">행사명</span>
       <input class="input" name="title" value="${esc(item.title || '')}" maxlength="100" placeholder="예: 가을 소풍" required></label>
     <label class="field"><span class="field__label">내용</span>
-      <textarea class="input" name="detail" maxlength="1000" placeholder="시간, 장소, 준비물 등">${esc(item.detail || '')}</textarea></label>`;
+      <textarea class="input" name="detail" maxlength="1000" placeholder="시간, 장소, 준비물 등">${esc(item.detail || '')}</textarea></label>
+    ${targetField(item, classes)}`;
 }
 
 function mealFields(item, categories) {
@@ -418,7 +458,7 @@ function openEditor(original, prefill = {}) {
 
   const form = U.el(`
     <form class="editor" novalidate>
-      ${kind === 'meal' ? mealFields(item, categories) : scheduleFields(item, editing, categories)}
+      ${kind === 'meal' ? mealFields(item, categories) : scheduleFields(item, editing, categories, (state.data && state.data.classes) || [])}
       <p class="form-error" role="alert" hidden></p>
       <div class="sheet-footer">
         <button type="submit" class="btn btn--tint btn--block">${icon('check', 18)}저장</button>
@@ -437,6 +477,7 @@ function openEditor(original, prefill = {}) {
 
   bindChoiceChips(form, def.categoryKey);
   if (kind === 'meal') bindAllergenPicker(form);
+  else bindTargetChips(form);
 
   const multi = form.elements.multi;
   if (multi) {
@@ -521,6 +562,89 @@ function openEditor(original, prefill = {}) {
   });
 }
 
+// ─── 월간 인쇄 ────────────────────────────────
+
+/**
+ * 지금 보고 있는 달을 A4 가로 한 장짜리 표로 인쇄합니다.
+ * (급간식 → 식단표, 교육일정 → 일정표 / 주말 일정이 있으면 토·일 칸도 넣습니다)
+ */
+function printMonth() {
+  if (!state.data) {
+    toast('먼저 이번 달 내용을 불러와 주세요.', { tone: 'error' });
+    return;
+  }
+
+  const kind = state.kind;
+  const { year, month } = state;
+  const items = kind === 'meal' ? U.sortMeals(state.data.meals) : state.data.schedules;
+  const byDate = U.groupBy(items, (item) => item.date);
+  const holidays = new Map((state.data.holidays || []).map((h) => [h.date, h.name]));
+  const fullWeek = items.some((item) => [0, 6].includes(U.weekdayIndex(item.date)));
+  const columns = fullWeek ? [0, 1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5];
+
+  // 주(행) 단위로 날짜를 모읍니다. 월~금 표는 월요일, 일~토 표는 일요일이 주의 시작입니다.
+  const weeks = new Map();
+  for (let day = 1; day <= U.daysInMonth(year, month); day++) {
+    const date = `${U.monthKey(year, month)}-${U.pad2(day)}`;
+    const wd = U.weekdayIndex(date);
+    if (!columns.includes(wd)) continue;
+    const key = fullWeek ? U.addDays(date, -wd) : U.weekStart(date);
+    if (!weeks.has(key)) weeks.set(key, {});
+    weeks.get(key)[wd] = date;
+  }
+
+  const cell = (date) => {
+    if (!date) return '<td class="is-empty"></td>';
+    const wd = U.weekdayIndex(date);
+    const holiday = holidays.get(date);
+    const list = byDate.get(date) || [];
+    const body = kind === 'meal'
+      ? list.map((meal) => {
+          const parts = U.splitMenu(meal.menu);
+          const numbers = new Set(U.parseAllergyNumbers(meal.allergy));
+          parts.forEach((p) => p.allergens.forEach((n) => numbers.add(n)));
+          return `<div class="pc-item"><span class="pc-type">${esc(meal.type)}</span>${esc(parts.map((p) => p.name).join(', '))}${
+            numbers.size ? ` <span class="pc-allergy">(${[...numbers].sort((a, b) => a - b).join('.')})</span>` : ''}</div>`;
+        }).join('')
+      : list.map((e) => {
+          const targets = U.parseTargets(e.target);
+          return `<div class="pc-item"><span class="pc-type">${esc(e.category)}</span>${esc(e.title)}${
+            targets.length ? ` <span class="pc-allergy">(${esc(targets.join(', '))})</span>` : ''}</div>`;
+        }).join('');
+    return `
+      <td class="${wd === 0 ? 'is-sun' : wd === 6 ? 'is-sat' : ''}${holiday ? ' is-holiday' : ''}">
+        <div class="pc-date"><b>${Number(date.slice(8))}</b>${holiday ? `<span class="pc-holiday">${esc(holiday)}</span>` : ''}</div>
+        ${body}
+      </td>`;
+  };
+
+  const title = kind === 'meal' ? '급·간식 식단표' : '교육일정표';
+  let root = document.getElementById('print-root');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'print-root';
+    document.body.append(root);
+  }
+
+  root.innerHTML = `
+    <header class="pc-head">
+      <div>
+        <p class="pc-school">${esc(CONFIG.SCHOOL_NAME)}</p>
+        <h1>${year}년 ${month}월 ${title}</h1>
+      </div>
+      <p class="pc-printed">출력 ${U.formatDateLabel(today, { year: true })}</p>
+    </header>
+    <table class="pc-table">
+      <thead><tr>${columns.map((wd) => `<th class="${wd === 0 ? 'is-sun' : wd === 6 ? 'is-sat' : ''}">${U.WEEKDAYS[wd]}</th>`).join('')}</tr></thead>
+      <tbody>${[...weeks.values()].map((week) => `<tr>${columns.map((wd) => cell(week[wd])).join('')}</tr>`).join('')}</tbody>
+    </table>
+    ${kind === 'meal' ? `
+      <p class="pc-foot">알레르기 유발식품 · ${U.ALLERGENS.map((name, i) => `${i + 1}.${name}`).join(' ')}</p>
+      <p class="pc-foot">※ 식단은 식재료 수급 등 유치원 사정에 따라 바뀔 수 있습니다.</p>` : ''}`;
+
+  window.print();
+}
+
 // ─── 엑셀 붙여넣기 ────────────────────────────
 
 function parseBulk(kind, text) {
@@ -552,7 +676,7 @@ function openBulk() {
     <div class="bulk">
       <p class="bulk-guide">
         엑셀·구글시트에서 아래 순서의 열을 선택해 복사(⌘/Ctrl + C)한 뒤 붙여넣으세요. 첫 줄의 제목행은 자동으로 건너뜁니다.<br>
-        <code>${def.columns.join(' │ ')}</code><br>
+        <code>${def.columns.join(' │ ')}</code>${kind === 'schedule' ? ' (대상 반은 비워도 돼요)' : ''}<br>
         날짜는 <code>2026-03-03</code>, <code>2026. 3. 3.</code>, <code>3/3</code> 등을 모두 인식해요.
       </p>
       <label class="field"><span class="field__label">붙여넣기</span>

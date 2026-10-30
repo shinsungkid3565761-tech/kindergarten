@@ -4,6 +4,7 @@ import { CONFIG } from './config.js';
 import { api, IS_DEMO } from './api.js';
 import { icon } from './icons.js';
 import { initNavbar, initTabBar, openSheet, onSwipe, renderEmpty, renderError, toast } from './ui.js';
+import { prefs } from './prefs.js';
 import * as U from './util.js';
 
 const TABS = {
@@ -39,6 +40,50 @@ let homeCalendarData = { schedules: [], meals: [] };
 let homeCalendarSeq = 0;
 let tabbar;
 let scrollToTodayPending = true;
+let knownClasses = [];
+
+// ─── 우리 반 ──────────────────────────────────
+
+/** 고른 반이 지금 반 목록에 없으면(이름 변경 등) 전체로 봅니다. */
+function activeClass() {
+  const name = prefs.myClass;
+  return knownClasses.includes(name) ? name : '';
+}
+
+/** 서버에서 받은 월 데이터에서 우리 반에 해당하는 일정만 남깁니다. */
+function withMyClass(data) {
+  if (Array.isArray(data.classes)) knownClasses = data.classes;
+  const name = activeClass();
+  if (!name) return data;
+  return { ...data, schedules: data.schedules.filter((e) => U.isForClass(e, name)) };
+}
+
+function updateClassPill() {
+  const pill = $('#class-pill');
+  pill.hidden = !knownClasses.length;
+  pill.innerHTML = `${icon('users', 17)}<span>우리 반 · <b>${esc(activeClass() || '전체')}</b></span>${icon('chevronDown', 15)}`;
+}
+
+function openClassPicker() {
+  const current = activeClass();
+  const content = U.el(`
+    <div>
+      <p class="sheet-lead">우리 반을 고르면 <b>전체 일정과 우리 반 일정</b>만 보여 드려요. 선택은 이 기기에만 저장돼요.</p>
+      <div class="choice-chips choice-chips--lg">
+        ${['', ...knownClasses].map((name) => `
+          <button type="button" class="choice-chip" data-class="${esc(name)}" aria-pressed="${name === current}">${esc(name || '전체 보기')}</button>`).join('')}
+      </div>
+    </div>`);
+  const sheet = openSheet({ title: '우리 반 선택', content });
+  content.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-class]');
+    if (!button) return;
+    prefs.myClass = button.dataset.class;
+    sheet.close();
+    toast(button.dataset.class ? `${button.dataset.class} 일정만 보여 드려요` : '모든 반 일정을 보여 드려요');
+    render();
+  });
+}
 
 // ─── 공통 렌더링 조각 ─────────────────────────
 
@@ -52,16 +97,20 @@ function renderMealRow(meal) {
   const tone = U.mealTone(meal.type);
   const items = U.splitMenu(meal.menu);
   const numbers = mealAllergyNumbers(meal, items);
+  const mine = prefs.allergens;
+  const hits = numbers.filter((n) => mine.includes(n));
   const allergyText = numbers.length
-    ? numbers.map((n) => `${U.ALLERGENS[n - 1]}<span class="allergy-num">${n}</span>`).join(' · ')
+    ? numbers.map((n) => `<span${mine.includes(n) ? ' class="allergy-hit"' : ''}>${U.ALLERGENS[n - 1]}<span class="allergy-num">${n}</span></span>`).join(' · ')
     : esc(meal.allergy);
 
   return `
-    <div class="meal-row tone-${tone}">
+    <div class="meal-row tone-${tone}${hits.length ? ' has-alert' : ''}">
       <span class="meal-row__icon">${icon(U.mealIcon(meal.type), 20)}</span>
       <div class="meal-row__body">
         <p class="meal-row__type">${esc(meal.type)}</p>
-        <p class="meal-row__menu">${items.map((item) => `<span class="menu-item">${esc(item.name)}${
+        ${hits.length ? `<p class="alert-line">${icon('alert', 14)}우리 아이 주의 · ${hits.map((n) => U.ALLERGENS[n - 1]).join(', ')}</p>` : ''}
+        <p class="meal-row__menu">${items.map((item) => `<span class="menu-item${
+          item.allergens.some((n) => mine.includes(n)) ? ' menu-item--alert' : ''}">${esc(item.name)}${
           item.allergens.length ? `<sup>${item.allergens.join('.')}</sup>` : ''}</span>`).join('')}</p>
         ${allergyText ? `<p class="allergy-line">${icon('info', 13)}<span>${allergyText}</span></p>` : ''}
         ${meal.note ? `<p class="note-line">${esc(meal.note)}</p>` : ''}
@@ -71,12 +120,14 @@ function renderMealRow(meal) {
 
 function renderEventRow(event, { showDate = false } = {}) {
   const tone = U.categoryTone(event.category);
+  const targets = U.parseTargets(event.target);
   return `
     <div class="event-row tone-${tone}">
       <span class="event-row__bar" aria-hidden="true"></span>
       <div class="event-row__body">
         <div class="event-row__meta">
           <span class="chip tone-${tone}">${esc(event.category)}</span>
+          ${targets.length ? `<span class="chip tone-gray">${icon('users', 12)}${esc(targets.join(' · '))}</span>` : ''}
           ${showDate ? `<span class="event-row__date">${U.formatDateLabel(event.date)} · ${U.relativeDayLabel(event.date, today)}</span>` : ''}
         </div>
         <p class="event-row__title">${esc(event.title)}</p>
@@ -118,11 +169,11 @@ function filterChips(values, current, action) {
 
 async function viewHome() {
   const next = U.shiftMonth(thisYear, thisMonth, 1);
-  const [current, upcomingMonth, calendarMonth] = await Promise.all([
+  const [current, upcomingMonth, calendarMonth] = (await Promise.all([
     api.getMonth(thisYear, thisMonth),
     api.getMonth(next.year, next.month).catch(() => ({ schedules: [], meals: [] })),
     api.getMonth(state.homeYear, state.homeMonth)
-  ]);
+  ])).map(withMyClass);
   homeCalendarData = calendarMonth;
   const schedules = [...current.schedules, ...upcomingMonth.schedules];
   const meals = [...current.meals, ...upcomingMonth.meals];
@@ -184,7 +235,7 @@ async function viewHome() {
 
       <div class="home-meals${nextMeals.length ? ' home-meals--pair' : ''}">
         <section class="card glass meal-card">
-          ${cardTitle('meal', '오늘의 급간식')}
+          ${cardTitle('meal', '오늘의 급간식', allergyButton({ compact: true }))}
           ${todayMeals.length
             ? todayMeals.map(renderMealRow).join('')
             : renderEmpty({ iconName: 'bowl', title: todayHoliday ? '공휴일에는 급간식이 없어요' : weekend ? '주말에는 급간식이 없어요' : '오늘 등록된 식단이 없어요' })}
@@ -228,7 +279,7 @@ async function changeHomeMonth(delta) {
   const seq = ++homeCalendarSeq;
   card.classList.add('is-loading');
   try {
-    const data = await api.getMonth(next.year, next.month);
+    const data = withMyClass(await api.getMonth(next.year, next.month));
     if (seq !== homeCalendarSeq) return;
     state.homeYear = next.year;
     state.homeMonth = next.month;
@@ -342,7 +393,7 @@ function calendarGrid(year, month, data, { action, selected = '', hint = '' }) {
 }
 
 async function viewCalendar() {
-  monthData = await api.getMonth(state.year, state.month);
+  monthData = withMyClass(await api.getMonth(state.year, state.month));
   const prefix = U.monthKey(state.year, state.month);
   if (!state.selected.startsWith(prefix)) {
     state.selected = today.startsWith(prefix) ? today : `${prefix}-01`;
@@ -373,7 +424,7 @@ function selectDay(date) {
 // ─── 교육일정 ─────────────────────────────────
 
 async function viewSchedule() {
-  const data = await api.getMonth(state.year, state.month);
+  const data = withMyClass(await api.getMonth(state.year, state.month));
   const categories = [...new Set(data.schedules.map((s) => s.category))];
   if (state.scheduleFilter !== ALL && !categories.includes(state.scheduleFilter)) state.scheduleFilter = ALL;
 
@@ -387,7 +438,7 @@ async function viewSchedule() {
   return `
     <div class="fade-in">
       ${filterChips(categories, state.scheduleFilter, 'filter-schedule')}
-      <p class="list-summary">${U.formatMonthLabel(state.year, state.month)} · 일정 ${filtered.length}개</p>
+      <p class="list-summary">${U.formatMonthLabel(state.year, state.month)} · 일정 ${filtered.length}개${activeClass() ? ` · ${esc(activeClass())} 기준` : ''}</p>
       <div class="date-groups">
         ${[...groups].map(([date, items]) => {
           const [, , day] = date.split('-').map(Number);
@@ -425,7 +476,7 @@ async function viewMeal() {
     <div class="fade-in">
       <div class="meal-tools">
         ${filterChips(types, state.mealFilter, 'filter-meal')}
-        <button type="button" class="btn btn--sm" data-action="allergy-info">${icon('info', 16)}알레르기 번호 안내</button>
+        ${allergyButton()}
       </div>
       ${[...weeks].map(([, dates]) => `
         <section class="week">
@@ -444,15 +495,55 @@ async function viewMeal() {
     </div>`;
 }
 
+function allergyButton({ compact = false } = {}) {
+  const count = prefs.allergens.length;
+  const label = count ? `우리 아이 알레르기 ${count}개` : compact ? '알레르기 설정' : '알레르기 안내 · 우리 아이 설정';
+  return `<button type="button" class="btn btn--sm${compact ? ' btn--plain' : ''}${count ? ' has-allergy' : ''}" data-action="allergy-info">${icon(count ? 'alert' : 'info', 16)}${label}</button>`;
+}
+
+/** 알레르기 번호 안내 + 우리 아이 알레르기 고르기 (고른 식품은 식단에서 빨간색으로 강조) */
 function openAllergyInfo() {
+  const before = prefs.allergens.join(',');
   const content = U.el(`
     <div>
-      <p class="sheet-lead">식단의 숫자는 아래 알레르기 유발 식품이 들어 있다는 뜻이에요.</p>
-      <ol class="allergen-list">
-        ${U.ALLERGENS.map((name, i) => `<li><span class="allergen-list__num">${i + 1}</span>${name}</li>`).join('')}
-      </ol>
+      <p class="sheet-lead">식단의 숫자는 알레르기 유발 식품 번호예요. <b>우리 아이가 피해야 할 식품을 눌러 두면</b> 식단에서 빨간색으로 알려 드려요. 선택은 이 기기에만 저장돼요.</p>
+      <div class="allergen-list">
+        ${U.ALLERGENS.map((name, i) => `
+          <button type="button" class="allergen-pick" data-allergen="${i + 1}" aria-pressed="${prefs.allergens.includes(i + 1)}">
+            <span class="allergen-list__num">${i + 1}</span>${name}
+          </button>`).join('')}
+      </div>
+      <button type="button" class="btn btn--block allergen-clear" data-clear>선택 모두 지우기</button>
     </div>`);
-  openSheet({ title: '알레르기 유발 식품 번호', content });
+  const clear = content.querySelector('[data-clear]');
+  const sync = () => {
+    content.querySelectorAll('[data-allergen]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(prefs.allergens.includes(Number(button.dataset.allergen))));
+    });
+    clear.hidden = !prefs.allergens.length;
+  };
+
+  content.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-allergen]');
+    if (button) {
+      const n = Number(button.dataset.allergen);
+      prefs.allergens = prefs.allergens.includes(n) ? prefs.allergens.filter((x) => x !== n) : [...prefs.allergens, n];
+    } else if (event.target.closest('[data-clear]')) {
+      prefs.allergens = [];
+    } else {
+      return;
+    }
+    sync();
+  });
+  sync();
+
+  openSheet({
+    title: '알레르기 · 우리 아이 설정',
+    content,
+    onClose: () => {
+      if (prefs.allergens.join(',') !== before) render();
+    }
+  });
 }
 
 // ─── 화면 전환 ────────────────────────────────
@@ -521,6 +612,7 @@ async function render() {
     const html = await VIEWS[state.tab]();
     if (seq !== renderSeq) return;
     view.innerHTML = html;
+    updateClassPill();
     if (autoScroll && state.year === thisYear && state.month === thisMonth) scrollToToday();
     if (state.tab === 'home') {
       onSwipe($('#home-calendar'), { left: () => changeHomeMonth(1), right: () => changeHomeMonth(-1) });
@@ -566,6 +658,7 @@ function init() {
   }
 
   initNavbar($('#navbar'), $('#page-title'));
+  $('#class-pill').addEventListener('click', openClassPicker);
   tabbar = initTabBar($('#tabbar'), {
     onChange: (name) => {
       if (name === state.tab) return;
