@@ -4,6 +4,7 @@ import { CONFIG } from './config.js';
 import { api, IS_DEMO } from './api.js';
 import { icon } from './icons.js';
 import { initNavbar, createSegmented, openSheet, confirmDialog, toast, renderEmpty, renderError } from './ui.js';
+import { buildWorkbook, cellText, cellToDate, downloadBlob, readSpreadsheetFile } from './excel.js';
 import * as U from './util.js';
 
 const SESSION_KEY = 'kg-admin-session';
@@ -56,6 +57,7 @@ const statsEl = $('#admin-stats');
 
 let loadSeq = 0;
 let toolbarReady = false;
+let kindControl = null;
 
 // ─── 저장소 · 세션 ────────────────────────────
 
@@ -155,7 +157,7 @@ function buildToolbar() {
       <button type="button" class="btn icon-btn" data-month="1" aria-label="다음 달">${icon('chevronRight', 20)}</button>
     </div>`;
 
-  const segmented = createSegmented(
+  kindControl = createSegmented(
     Object.entries(KINDS).map(([value, def]) => ({ value, label: def.label })),
     state.kind,
     (value) => {
@@ -165,7 +167,7 @@ function buildToolbar() {
     },
     { label: '관리할 항목' }
   );
-  toolbar.append(segmented.el);
+  toolbar.append(kindControl.el);
 
   toolbar.addEventListener('click', (event) => {
     const button = event.target.closest('[data-month]');
@@ -179,14 +181,14 @@ function buildToolbar() {
   const actions = $('#admin-actions');
   actions.innerHTML = `
     <button type="button" class="btn btn--tint" data-act="add">${icon('plus', 18)}새로 추가</button>
-    <button type="button" class="btn" data-act="bulk">${icon('paste', 18)}엑셀 붙여넣기</button>
+    <button type="button" class="btn" data-act="excel">${icon('table', 18)}엑셀</button>
     <button type="button" class="btn" data-act="print">${icon('print', 18)}월간 인쇄</button>
     <button type="button" class="btn icon-btn" data-act="refresh" aria-label="새로고침" title="새로고침">${icon('refresh', 18)}</button>`;
 
   actions.addEventListener('click', (event) => {
     const act = event.target.closest('[data-act]')?.dataset.act;
     if (act === 'add') openEditor(null);
-    if (act === 'bulk') openBulk();
+    if (act === 'excel') openExcelHub();
     if (act === 'print') printMonth();
     if (act === 'refresh') load({ force: true });
   });
@@ -645,6 +647,47 @@ function printMonth() {
   window.print();
 }
 
+// ─── 엑셀 공통: 줄 확인 · 미리보기 ─────────────
+
+/**
+ * 한 줄(엑셀 행 · 붙여넣은 줄) 확인
+ * → { skip } 날짜 · 구분 말고는 비어 있는 줄(양식의 빈 칸)
+ * → { item, error, dateText }
+ */
+function validateRecord(kind, values, fallbackYear) {
+  const def = KINDS[kind];
+  const item = {};
+  def.fields.forEach((key) => { item[key] = key === 'date' ? '' : cellText(values[key]); });
+
+  const filled = def.fields.some((key) => key !== 'date' && key !== def.categoryKey && item[key]);
+  if (!filled) return { skip: true };
+
+  item.date = cellToDate(values.date, fallbackYear);
+  if (!item[def.categoryKey]) item[def.categoryKey] = def.defaultCategory;
+
+  let error = '';
+  if (!item.date) error = `날짜 형식 확인: ${cellText(values.date) || '(비어 있음)'}`;
+  else if (!item[def.requiredKey]) error = `${def.requiredLabel} 없음`;
+  return { item, error, dateText: cellText(values.date) };
+}
+
+function previewTable(kind, rows, { limit = 60, where = false } = {}) {
+  const def = KINDS[kind];
+  return `
+    <table>
+      <thead><tr><th>상태</th>${where ? '<th>위치</th>' : ''}${def.columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.slice(0, limit).map((p) => `
+        <tr class="${p.error ? 'is-invalid' : ''}">
+          <td class="nw">${p.error ? esc(p.error) : '✓'}</td>
+          ${where ? `<td class="nw">${esc(p.sheet)} ${p.rowNumber}행</td>` : ''}
+          ${def.fields.map((key) => `<td${key === 'date' || key === def.categoryKey ? ' class="nw"' : ''}>${esc(key === 'date' ? (p.item.date ? U.formatDateLabel(p.item.date) : p.dateText) : p.item[key])}</td>`).join('')}
+        </tr>`).join('')}</tbody>
+    </table>`;
+}
+
+const monthsOf = (items) => [...new Set(items.map((item) => item.date.slice(0, 7)))].sort();
+const monthLabel = (ym) => U.formatMonthLabel(...ym.split('-').map(Number));
+
 // ─── 엑셀 붙여넣기 ────────────────────────────
 
 function parseBulk(kind, text) {
@@ -652,19 +695,13 @@ function parseBulk(kind, text) {
   const rows = U.parseTsv(text);
   if (rows.length && rows[0][0].replace(/\s/g, '') === '날짜') rows.shift();
 
-  return rows.map((cells) => {
-    const item = {};
-    def.fields.forEach((key, i) => { item[key] = (cells[i] || '').trim(); });
-    item.date = U.normalizeDateInput(cells[0], state.year);
-    if (!item[def.categoryKey]) item[def.categoryKey] = def.defaultCategory;
-
-    let error = '';
-    if (cells.length < 2) error = '열 구분(탭)이 없어요';
-    else if (!item.date) error = `날짜 형식 확인: ${cells[0]}`;
-    else if (!item[def.requiredKey]) error = `${def.requiredLabel} 없음`;
-
-    return { item, cells, error };
-  });
+  return rows
+    .map((cells) => {
+      if (cells.length < 2) return { item: {}, error: '열 구분(탭)이 없어요', dateText: cells[0] || '' };
+      const values = Object.fromEntries(def.fields.map((key, i) => [key, cells[i] || '']));
+      return validateRecord(kind, values, state.year);
+    })
+    .filter((p) => !p.skip);
 }
 
 function openBulk() {
@@ -709,15 +746,7 @@ function openBulk() {
     }
 
     preview.hidden = false;
-    preview.innerHTML = `
-      <table>
-        <thead><tr><th>상태</th>${def.columns.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
-        <tbody>${parsed.slice(0, 60).map((p) => `
-          <tr class="${p.error ? 'is-invalid' : ''}">
-            <td>${p.error ? esc(p.error) : '✓'}</td>
-            ${def.fields.map((key) => `<td>${esc(key === 'date' ? (p.item.date ? U.formatDateLabel(p.item.date) : p.cells[0] || '') : p.item[key])}</td>`).join('')}
-          </tr>`).join('')}</tbody>
-      </table>`;
+    preview.innerHTML = previewTable(kind, parsed);
 
     summary.textContent = invalid
       ? `${parsed.length}줄 중 ${invalid}줄에 오류가 있어요. 고친 뒤 다시 붙여넣어 주세요.`
@@ -748,6 +777,220 @@ function openBulk() {
       handleWriteError(err, sheet, errorEl);
       submitButton.disabled = false;
       submitButton.innerHTML = `${icon('check', 18)}등록하기`;
+    }
+  });
+}
+
+// ─── 엑셀 파일: 양식 받기 · 내려받기 · 올리기 ──
+
+function excelFilename(suffix) {
+  return `${CONFIG.SCHOOL_NAME}_${U.monthKey(state.year, state.month)}_${suffix}.xlsx`;
+}
+
+function openExcelHub() {
+  const m = state.month;
+  const content = U.el(`
+    <div>
+      <p class="sheet-lead">구글시트를 열지 않아도 엑셀 파일로 한 달 치를 한 번에 올리고 내려받을 수 있어요.</p>
+      <div class="option-list">
+        <button type="button" class="option glass glass--thin" data-opt="template">
+          <span class="option__icon tone-green">${icon('download', 22)}</span>
+          <span class="option__text"><b>빈 양식 받기</b><small>${m}월 평일 날짜와 오전간식 · 점심 · 오후간식 칸이 채워진 엑셀 양식</small></span>
+        </button>
+        <button type="button" class="option glass glass--thin" data-opt="export">
+          <span class="option__icon tone-blue">${icon('table', 22)}</span>
+          <span class="option__text"><b>이 달 내용 내려받기</b><small>지금 등록된 ${m}월 교육일정 · 급간식 — 고쳐서 다시 올릴 수 있어요</small></span>
+        </button>
+        <label class="option glass glass--thin" data-opt="upload">
+          <span class="option__icon tone-purple">${icon('upload', 22)}</span>
+          <span class="option__text"><b>엑셀 파일 올리기</b><small>.xlsx 또는 .csv · 올리기 전에 미리보기로 확인해요</small></span>
+          <input type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
+        </label>
+        <button type="button" class="option glass glass--thin" data-opt="paste">
+          <span class="option__icon tone-orange">${icon('paste', 22)}</span>
+          <span class="option__text"><b>복사해서 붙여넣기</b><small>엑셀에서 칸을 복사해 ${esc(KINDS[state.kind].label)}에 바로 붙여넣기</small></span>
+        </button>
+      </div>
+    </div>`);
+  const sheet = openSheet({ title: '엑셀로 관리', content });
+
+  const busy = (option, on) => {
+    option.classList.toggle('is-busy', on);
+    option.querySelector('.option__icon').innerHTML = on ? '<span class="spinner" aria-hidden="true"></span>' : option.dataset.icon;
+  };
+  content.querySelectorAll('.option').forEach((option) => { option.dataset.icon = option.querySelector('.option__icon').innerHTML; });
+
+  const download = async (option, prefill) => {
+    if (option.classList.contains('is-busy')) return;
+    if (!state.data) {
+      toast('먼저 이번 달 내용을 불러와 주세요.', { tone: 'error' });
+      return;
+    }
+    busy(option, true);
+    try {
+      const blob = await buildWorkbook({
+        schoolName: CONFIG.SCHOOL_NAME,
+        year: state.year,
+        month: state.month,
+        schedules: state.data.schedules,
+        meals: state.data.meals,
+        holidays: state.data.holidays || [],
+        classes: state.data.classes || [],
+        prefill
+      });
+      downloadBlob(blob, excelFilename(prefill ? '양식' : '내용'));
+      toast(prefill ? `${state.month}월 양식을 내려받았어요` : `${state.month}월 내용을 내려받았어요`);
+    } catch (err) {
+      toast(err.message, { tone: 'error' });
+    } finally {
+      busy(option, false);
+    }
+  };
+
+  content.querySelector('[data-opt="template"]').addEventListener('click', (e) => download(e.currentTarget, true));
+  content.querySelector('[data-opt="export"]').addEventListener('click', (e) => download(e.currentTarget, false));
+  content.querySelector('[data-opt="paste"]').addEventListener('click', () => {
+    sheet.close();
+    setTimeout(openBulk, 320);
+  });
+
+  const uploadOption = content.querySelector('[data-opt="upload"]');
+  const fileInput = uploadOption.querySelector('input');
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    fileInput.value = '';
+    if (!file) return;
+    busy(uploadOption, true);
+    try {
+      const parsed = await readSpreadsheetFile(file);
+      sheet.close();
+      setTimeout(() => openUploadPreview(file.name, parsed), 320);
+    } catch (err) {
+      toast(err.message, { tone: 'error' });
+    } finally {
+      busy(uploadOption, false);
+    }
+  });
+}
+
+/** 올린 파일 미리보기 → 추가하기 / 해당 달 바꾸기 */
+function openUploadPreview(fileName, parsed) {
+  const groups = ['schedule', 'meal'].map((kind) => {
+    let skipped = 0;
+    const rows = parsed[kind]
+      .map((record) => ({ ...validateRecord(kind, record.values, state.year), sheet: record.sheet, rowNumber: record.rowNumber }))
+      .filter((p) => (p.skip ? (skipped++, false) : true));
+    const items = rows.filter((p) => !p.error).map((p) => p.item);
+    return { kind, rows, items, skipped, invalid: rows.length - items.length, months: monthsOf(items) };
+  });
+
+  const total = groups.reduce((n, g) => n + g.rows.length, 0);
+  if (!total) {
+    const found = parsed.sheets.length;
+    toast(found ? '올릴 내용이 없어요. 메뉴나 행사명이 적힌 줄이 있는지 확인해 주세요.' : '양식을 찾지 못했어요. 첫 줄에 "날짜, 구분, 메뉴(또는 행사명)" 제목이 있는지 확인해 주세요.', { tone: 'error' });
+    return;
+  }
+
+  const invalid = groups.reduce((n, g) => n + g.invalid, 0);
+  const tooMany = groups.some((g) => g.items.length > MAX_BULK_ROWS * 4);
+  const content = U.el(`
+    <div class="upload">
+      <div class="upload-summary">
+        ${groups.filter((g) => g.rows.length || g.skipped).map((g) => `
+          <div class="upload-summary__item glass glass--thin">
+            <b>${KINDS[g.kind].label}</b>
+            <span>${g.items.length}건${g.months.length ? ` · ${g.months.map(monthLabel).join(', ')}` : ''}</span>
+            ${g.invalid ? `<span class="is-error">오류 ${g.invalid}줄</span>` : ''}
+            ${g.skipped ? `<small>빈 줄 ${g.skipped}개는 건너뛰어요</small>` : ''}
+          </div>`).join('')}
+      </div>
+
+      <fieldset class="mode-picker">
+        <legend class="field__label">올리는 방법</legend>
+        <label class="mode glass glass--thin">
+          <input type="radio" name="mode" value="add" checked>
+          <span><b>추가하기</b><small>기존 내용은 그대로 두고 파일 내용을 더해요.</small></span>
+        </label>
+        <label class="mode glass glass--thin">
+          <input type="radio" name="mode" value="replace">
+          <span><b>해당 달 바꾸기</b><small>파일에 들어 있는 달(${[...new Set(groups.flatMap((g) => g.months))].map(monthLabel).join(', ') || '-'})의 기존 ${groups.filter((g) => g.items.length).map((g) => KINDS[g.kind].label).join(' · ')}을 지우고 파일 내용으로 바꿔요. "이 달 내용 내려받기"로 받은 파일을 고쳐서 올릴 때 쓰세요.</small></span>
+        </label>
+      </fieldset>
+
+      ${groups.filter((g) => g.rows.length).map((g) => `
+        <h3 class="mini-title">${KINDS[g.kind].label} 미리보기${g.rows.length > 60 ? ' (60줄까지)' : ''}</h3>
+        <div class="bulk-preview">${previewTable(g.kind, g.rows, { where: true })}</div>`).join('')}
+
+      <p class="bulk-summary">${invalid
+        ? `오류가 있는 ${invalid}줄을 엑셀에서 고친 뒤 다시 올려 주세요.`
+        : tooMany ? '한 번에 올리기에는 너무 많아요. 몇 달씩 나눠서 올려 주세요.' : `모두 ${total}건을 올릴 수 있어요.`}</p>
+      <p class="form-error" role="alert" hidden></p>
+      <div class="sheet-footer">
+        <button type="button" class="btn btn--tint btn--block" data-submit ${invalid || tooMany ? 'disabled' : ''}>${icon('upload', 18)}올리기</button>
+      </div>
+    </div>`);
+
+  const errorEl = content.querySelector('.form-error');
+  const submitButton = content.querySelector('[data-submit]');
+  const sheet = openSheet({ title: `엑셀 올리기 · ${fileName}`, content });
+
+  submitButton.addEventListener('click', async () => {
+    const replace = content.querySelector('input[name="mode"]:checked').value === 'replace';
+    const work = groups.filter((g) => g.items.length);
+    if (!work.length) return;
+
+    if (replace) {
+      const ok = await confirmDialog({
+        title: '해당 달 내용을 바꿀까요?',
+        message: work.map((g) => `${KINDS[g.kind].label} ${g.months.map(monthLabel).join(', ')}: 기존 내용 → 파일의 ${g.items.length}건`).join('\n') + '\n기존 내용은 지워지고 되돌릴 수 없어요.',
+        confirmLabel: '바꾸기',
+        destructive: true
+      });
+      if (!ok) return;
+    }
+
+    submitButton.disabled = true;
+    submitButton.innerHTML = '<span class="spinner" aria-hidden="true"></span>올리는 중…';
+    const done = [];
+    try {
+      for (const g of work) {
+        if (replace) {
+          let removed = 0;
+          let added = 0;
+          // 달마다 나눠 보내서 한 번에 보내는 양을 줄입니다.
+          for (const ym of g.months) {
+            const result = await api.replaceMonths(state.session.token, g.kind, [ym], g.items.filter((item) => item.date.startsWith(ym)));
+            removed += result.removed;
+            added += result.added;
+          }
+          done.push(`${KINDS[g.kind].label} ${removed}건 → ${added}건`);
+        } else {
+          let added = 0;
+          for (let i = 0; i < g.items.length; i += MAX_BULK_ROWS) {
+            const result = await api.bulkAdd(state.session.token, g.kind, g.items.slice(i, i + MAX_BULK_ROWS));
+            added += result.count;
+          }
+          done.push(`${KINDS[g.kind].label} ${added}건`);
+        }
+      }
+      sheet.close();
+      const first = work.flatMap((g) => g.items.map((item) => item.date)).sort()[0];
+      const shown = work.find((g) => g.kind === state.kind) ? state.kind : work[0].kind;
+      if (shown !== state.kind) {
+        state.kind = shown;
+        writeStorage(localStorage, KIND_KEY, shown);
+        kindControl.setValue(shown);
+      }
+      await afterWrite(`${replace ? '바꿨어요' : '올렸어요'} · ${done.join(', ')}`, first);
+    } catch (err) {
+      handleWriteError(err, sheet, errorEl);
+      // 앞쪽 종류(예: 교육일정)는 이미 저장됐을 수 있으니 알려 줍니다.
+      if (done.length) {
+        if (!errorEl.hidden) errorEl.textContent = `${done.join(', ')}까지는 저장됐어요. ${err.message}`;
+        else toast(`${done.join(', ')}까지는 저장됐어요.`, { tone: 'error' });
+      }
+      submitButton.disabled = false;
+      submitButton.innerHTML = `${icon('upload', 18)}올리기`;
     }
   });
 }

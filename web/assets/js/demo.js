@@ -162,6 +162,25 @@ export function createDemoBackend() {
       persist();
       return { row };
     },
+    replaceMonths({ kind, months, items }) {
+      if (!Array.isArray(items) || !items.length) fail('INVALID', '바꿀 내용이 없습니다.');
+      const records = items.map((item, index) => {
+        try {
+          const record = normalize(kind, item);
+          if (!months.includes(record.date.slice(0, 7))) fail('INVALID', `${record.date}은(는) 바꿀 달에 속하지 않습니다.`);
+          return record;
+        } catch (err) {
+          err.message = `${index + 1}번째 줄: ${err.message}`;
+          throw err;
+        }
+      });
+      const before = data[kind].length;
+      data[kind] = data[kind].filter((item) => !months.includes(item.date.slice(0, 7)));
+      const removed = before - data[kind].length;
+      data[kind].push(...records);
+      persist();
+      return { removed, added: records.length };
+    },
     bulkAdd({ kind, items }) {
       if (!Array.isArray(items) || !items.length) fail('INVALID', '등록할 항목이 없습니다.');
       const records = items.map((item, index) => {

@@ -3,7 +3,7 @@
  * Code.gs - Apps Script 백엔드 (구글시트 + JSON API)
  *
  * - 공개 페이지(GitHub Pages)  : GET  ?action=month&year=2026&month=3
- * - 관리자 페이지              : POST {action: 'login' | 'save' | 'delete' | 'bulkAdd', ...}
+ * - 관리자 페이지              : POST {action: 'login' | 'save' | 'delete' | 'bulkAdd' | 'replaceMonths', ...}
  * - 관리자 비밀번호            : 구글시트 [설정] 탭의 '관리자 비밀번호' 칸
  * - 공휴일 (선택)               : [설정] 탭의 '공휴일 API 키' 칸에 공공데이터포털 인증키
  *                                 (한국천문연구원 특일 정보 = 네이버 달력과 같은 출처)
@@ -45,7 +45,7 @@ const MAX_LOGIN_FAILURES = 10;               // 10분 동안 허용하는 로그
 const MAX_BULK_ITEMS = 500;                  // 일괄 등록 1회 최대 건수
 
 // 쓰기 요청(POST 전용)
-const WRITE_ACTIONS = { login: true, save: true, 'delete': true, bulkAdd: true };
+const WRITE_ACTIONS = { login: true, save: true, 'delete': true, bulkAdd: true, replaceMonths: true };
 
 // 시트 종류별 정의 (열 순서 = 시트 열 순서)
 const KINDS = {
@@ -173,6 +173,10 @@ function handleRequest_(method, params) {
       case 'bulkAdd':
         requireAdmin_(params.token);
         return ok_(bulkAdd_(params.kind, params.items));
+
+      case 'replaceMonths':
+        requireAdmin_(params.token);
+        return ok_(replaceMonths_(params.kind, params.months, params.items));
 
       default:
         throw apiError_('INVALID', '알 수 없는 요청입니다: ' + action);
@@ -621,6 +625,64 @@ function bulkAdd_(kind, items) {
     sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
     invalidateCache_();
     return { count: rows.length };
+  });
+}
+
+/**
+ * 엑셀 올리기의 '해당 달 바꾸기': 지정한 달(예: ['2026-11'])의 기존 항목을 지우고 새 항목으로 바꿉니다.
+ * 새 줄을 먼저 덧붙인 뒤 옛 줄을 지우므로, 중간에 멈춰도 내용이 사라지지 않고 겹칠 뿐입니다.
+ */
+function replaceMonths_(kind, months, items) {
+  const def = getKind_(kind);
+
+  if (!Array.isArray(months) || !months.length || months.some(function(m) { return !/^\d{4}-\d{2}$/.test(m); })) {
+    throw apiError_('INVALID', '바꿀 달이 올바르지 않습니다.');
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    throw apiError_('INVALID', '바꿀 내용이 없습니다. (빈 파일로는 달 전체를 지울 수 없습니다)');
+  }
+  if (items.length > MAX_BULK_ITEMS) {
+    throw apiError_('INVALID', '한 번에 최대 ' + MAX_BULK_ITEMS + '건까지 등록할 수 있습니다.');
+  }
+
+  const rows = items.map(function(item, index) {
+    let record;
+    try {
+      record = normalizeItem_(def, item);
+    } catch (err) {
+      if (err.apiCode) err.message = (index + 1) + '번째 줄: ' + err.message;
+      throw err;
+    }
+    if (months.indexOf(record.date.slice(0, 7)) === -1) {
+      throw apiError_('INVALID', (index + 1) + '번째 줄: ' + record.date + '은(는) 바꿀 달에 속하지 않습니다.');
+    }
+    return toRowValues_(def, record);
+  });
+
+  return withLock_(function() {
+    const sheet = getKindSheet_(def);
+    const lastRow = sheet.getLastRow();
+    const doomed = [];
+
+    if (lastRow >= 2) {
+      sheet.getRange(2, 1, lastRow - 1, 1).getValues().forEach(function(row, index) {
+        const date = formatDate_(row[0]);
+        if (date && months.indexOf(date.slice(0, 7)) !== -1) doomed.push(index + 2);
+      });
+    }
+
+    sheet.getRange(lastRow + 1, 1, rows.length, rows[0].length).setValues(rows);
+
+    // 아래쪽부터 이어진 줄 묶음 단위로 지웁니다.
+    for (let end = doomed.length - 1; end >= 0;) {
+      let start = end;
+      while (start > 0 && doomed[start - 1] === doomed[start] - 1) start--;
+      sheet.deleteRows(doomed[start], end - start + 1);
+      end = start - 1;
+    }
+
+    invalidateCache_();
+    return { removed: doomed.length, added: rows.length };
   });
 }
 

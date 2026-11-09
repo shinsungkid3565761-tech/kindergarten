@@ -115,5 +115,10 @@ export const api = {
 
   bulkAdd(token, kind, items) {
     return send('POST', { action: 'bulkAdd', token, kind, items });
+  },
+
+  /** 지정한 달(['2026-11'])의 기존 항목을 지우고 items로 바꿉니다. */
+  replaceMonths(token, kind, months, items) {
+    return send('POST', { action: 'replaceMonths', token, kind, months, items });
   }
 };
