@@ -346,9 +346,12 @@ function renderHomeHero() {
     </button>`).join('');
   const tips = brief.tips.map((t) => `<span class="tip-chip tone-${t.tone}">${icon(t.icon, 15)}${esc(t.label)}</span>`).join('');
   box.hidden = false;
+  // 선생님이 직접 쓴 글로 오해하지 않도록 자동 안내임을 분명히 적습니다.
   box.innerHTML = `
+    <p class="brief__label"><span class="auto-badge">${icon('sparkles', 14)}자동 안내</span>등록된 일정${brief.hasForecast ? '과 날씨 예보' : ''}로 자동으로 만든 문장이에요</p>
     <p class="brief__text">${brief.html}</p>
-    ${actions || tips ? `<div class="brief__chips">${actions}${tips}</div>` : ''}`;
+    ${actions || tips ? `<div class="brief__chips">${actions}${tips}</div>` : ''}
+    <p class="brief__foot">선생님이 직접 작성한 글이 아니에요.${brief.hasForecast ? ' 날씨 · 미세먼지는 예보 값이라 실제와 조금 다를 수 있어요.' : ''}</p>`;
 }
 
 function loadWeather({ force = false } = {}) {

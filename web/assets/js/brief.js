@@ -1,4 +1,5 @@
 // 오늘 화면 맨 위 안내: 인사말 + 오늘(오후에는 내일) 일정 + 날씨에 맞는 옷차림
+// 선생님이 쓴 글로 오해하지 않도록 화면에는 '자동 안내'로 표시하고, 말투는 권유형으로 둡니다.
 // 화면 없이도 시험할 수 있도록 문장만 만드는 순수 함수로 둡니다.
 
 import * as U from './util.js';
@@ -83,7 +84,7 @@ export function outfitAdvice(f) {
   const tip = (iconName, label, tone) => tips.push({ icon: iconName, label, tone });
 
   if (warm >= 29) {
-    lines.push('많이 더우니 <b>통풍이 잘 되는 반팔 · 반바지</b>를 입혀 주세요.');
+    lines.push('많이 더우니 <b>통풍이 잘 되는 반팔 · 반바지</b>가 좋아요.');
     tip('shirt', '반팔 · 반바지', 'orange');
   } else if (cold >= 23) {
     lines.push('더운 편이라 <b>반팔</b>이 좋아요.');
@@ -95,26 +96,26 @@ export function outfitAdvice(f) {
     lines.push('활동하기 좋은 날씨라 <b>긴팔</b>이면 충분해요.');
     tip('shirt', '긴팔', 'green');
   } else if (cold >= 12) {
-    lines.push('선선하니 긴팔에 <b>가벼운 겉옷(가디건 · 바람막이)</b>을 챙겨 주세요.');
+    lines.push('선선하니 긴팔에 <b>가벼운 겉옷(가디건 · 바람막이)</b>을 챙기면 좋아요.');
     tip('jacket', '가벼운 겉옷', 'teal');
   } else if (cold >= 7) {
-    lines.push('쌀쌀하니 <b>도톰한 겉옷(점퍼 · 자켓)</b>을 입혀 주세요.');
+    lines.push('쌀쌀하니 <b>도톰한 겉옷(점퍼 · 자켓)</b>을 추천해요.');
     tip('jacket', '도톰한 겉옷', 'blue');
   } else if (cold >= 2) {
-    lines.push('추우니 <b>따뜻한 점퍼나 얇은 패딩</b>을 입혀 주세요.');
+    lines.push('추우니 <b>따뜻한 점퍼나 얇은 패딩</b>을 추천해요.');
     tip('jacket', '점퍼 · 패딩', 'blue');
   } else if (cold >= -4) {
-    lines.push('많이 추우니 <b>두꺼운 패딩</b>에 장갑을 챙겨 주세요.');
+    lines.push('많이 추우니 <b>두꺼운 패딩</b>과 장갑을 추천해요.');
     tip('jacket', '두꺼운 패딩', 'purple');
     tip('mitten', '장갑', 'purple');
   } else {
-    lines.push('아주 추우니 <b>두꺼운 패딩</b>에 모자 · 장갑 · 목도리까지 꼭 챙겨 주세요.');
+    lines.push('아주 추우니 <b>두꺼운 패딩</b>에 모자 · 장갑 · 목도리까지 챙기면 좋아요.');
     tip('jacket', '두꺼운 패딩', 'purple');
     tip('mitten', '모자 · 장갑 · 목도리', 'purple');
   }
 
   if (warm - cold >= 7 && cold < 17 && warm < 29) {
-    lines.push('낮에는 따뜻해지니 <b>입고 벗기 쉬운 옷</b>으로 겹쳐 입혀 주세요.');
+    lines.push('낮에는 따뜻해지니 <b>입고 벗기 쉬운 옷</b>으로 겹쳐 입으면 좋아요.');
     tip('layers', '겹쳐 입기', 'teal');
   }
 
@@ -123,17 +124,17 @@ export function outfitAdvice(f) {
   const pop = Number.isFinite(f.pop) ? f.pop : 0;
   const popText = pop ? `(강수확률 ${pop}%)` : '';
   if (f.snowHours > 0) {
-    extras.push({ text: '눈 소식이 있어요. <b>미끄럽지 않은 신발</b>과 장갑을 챙겨 주세요.', tip: { icon: 'snowflake', label: '방수 신발', tone: 'blue' } });
+    extras.push({ text: '눈 소식이 있어요. <b>미끄럽지 않은 신발</b>과 장갑을 챙기면 좋아요.', tip: { icon: 'snowflake', label: '방수 신발', tone: 'blue' } });
   } else if (pop >= 60 || f.rainHours >= 2) {
-    extras.push({ text: `비 소식이 있어요${popText}. <b>우산과 장화</b>를 챙겨 주세요.`, tip: { icon: 'umbrella', label: '우산 · 장화', tone: 'blue' } });
+    extras.push({ text: `비 소식이 있어요${popText}. <b>우산과 장화</b>를 챙기면 좋아요.`, tip: { icon: 'umbrella', label: '우산 · 장화', tone: 'blue' } });
   } else if (pop >= 40 || f.rainHours === 1) {
     extras.push({ text: `비가 올 수도 있어요${popText}. <b>작은 우산</b>을 챙기면 좋아요.`, tip: { icon: 'umbrella', label: '우산', tone: 'blue' } });
   }
   if (f.dust && f.dust.level >= 2) {
-    extras.push({ text: `미세먼지가 ${f.dust.level >= 3 ? '매우 ' : ''}나빠요. <b>마스크</b>를 챙겨 주세요.`, tip: { icon: 'mask', label: '마스크', tone: 'orange' } });
+    extras.push({ text: `미세먼지가 ${f.dust.level >= 3 ? '매우 ' : ''}나빠요. <b>마스크</b>를 챙기면 좋아요.`, tip: { icon: 'mask', label: '마스크', tone: 'orange' } });
   }
   if (f.uv >= 6 && warm >= 18) {
-    extras.push({ text: '자외선이 강해요. <b>모자와 선크림</b>을 챙겨 주세요.', tip: { icon: 'sun', label: '모자 · 선크림', tone: 'yellow' } });
+    extras.push({ text: '자외선이 강해요. <b>모자와 선크림</b>을 챙기면 좋아요.', tip: { icon: 'sun', label: '모자 · 선크림', tone: 'yellow' } });
   }
   if (f.wind >= 8 && cold < 20) {
     extras.push({ text: `바람이 세게 불어요(초속 ${Math.round(f.wind)}m). <b>모자 달린 겉옷</b>이 좋아요.`, tip: { icon: 'wind', label: '바람 주의', tone: 'teal' } });
