@@ -22,7 +22,8 @@ GitHub Pages (web/)  ──  GET ?action=month ──────────▶
 | `apps-script/appsscript.json` | Apps Script 설정(시간대 Asia/Seoul, 웹앱 공개 설정) |
 | `web/index.html` | 공개 페이지: 오늘 · 달력 · 교육일정 · 급간식 탭 |
 | `web/admin.html` | 관리자 페이지 |
-| `web/assets/js/config.js` | **Apps Script 웹앱 주소(API_URL)** 와 유치원 이름 설정 |
+| `web/assets/js/config.js` | **Apps Script 웹앱 주소(API_URL)**, 유치원 이름, 날씨 위치(당진), '내일 안내' 시작 시각 설정 |
+| `web/assets/js/brief.js` · `weather.js` · `clock.js` | 오늘 화면 맨 위 안내 문장 · 날씨(Open-Meteo) · 아날로그 시계 |
 | `web/assets/js/excel.js` | 엑셀 양식 만들기 · 엑셀/CSV 읽기 (관리자 페이지에서 처음 쓸 때만 `web/assets/vendor/`의 ExcelJS · JSZip을 불러옴, 둘 다 MIT) |
 | `web/assets/css/liquid.css` | Liquid Glass 디자인 시스템(유리 재질, 플로팅 탭바, 시트, 세그먼트 컨트롤) |
 | `.github/workflows/pages.yml` | 기본 브랜치에 올리면 `web/` 폴더를 GitHub Pages로 자동 배포 |
@@ -78,7 +79,10 @@ GitHub Pages (web/)  ──  GET ?action=month ──────────▶
 ## 3. 사용 방법
 
 ### 학부모 (공개 페이지)
-- **오늘**: 오늘의 급간식, 오늘 일정, 다가오는 일정, 내일 식단
+- **오늘**: 맨 위 인사말 · 안내 문장 · 아날로그 시계, 그 아래 달력, 오늘의 급간식, 내일 식단, 다가오는 일정
+  - **안내 문장**: 그날 일정 + 당진 날씨 + 아이 옷차림(체감온도 기준) + 준비물(우산 · 마스크 등)을 한두 문장으로 알려 줍니다.
+  - **오후 2시부터는 내일 기준**으로 바뀝니다. 내일이 주말 · 공휴일 · 휴원(구분에 `휴원` 포함)이면 쉰다고 알려 주고 **다음 등원일**의 일정과 날씨를 안내합니다. (시각은 `config.js`의 `TOMORROW_FROM_HOUR`)
+  - **날씨 · 미세먼지**: [Open-Meteo](https://open-meteo.com/) 무료 예보(키 필요 없음)를 학부모 브라우저에서 바로 받아 20분 동안 저장해 씁니다. 위치는 `config.js`의 `WEATHER`(당진시청 좌표). 미세먼지 등급은 환경부 기준(PM10 · PM2.5 중 나쁜 쪽)이지만 측정소 실측이 아닌 예보 모델 값이라 에어코리아와 조금 다를 수 있습니다. 날씨를 못 받으면 일정 안내와 시계만 보입니다.
 - **달력**: 일정은 색 점, 급간식은 회색 점으로 표시. 날짜를 누르면 그날 내용이 아래에 나옵니다. 좌우로 밀면 달이 바뀝니다.
 - **교육일정**: 날짜별 일정 목록, 구분(행사 · 휴원 등)별 필터
 - **급간식**: 주차별 식단, 오전간식/점심/오후간식 필터, 알레르기 번호(1~19) 안내

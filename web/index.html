@@ -49,11 +49,14 @@
   </header>
 
   <main class="page" id="main">
-    <section class="hero">
+    <section class="hero" id="hero">
       <p class="eyebrow" id="school-name">신성대학교부속유치원</p>
       <h1 class="large-title" id="page-title">오늘</h1>
       <p class="subtitle" id="page-subtitle"></p>
+      <p class="hero-weather" id="hero-weather" hidden></p>
+      <div class="brief" id="brief" hidden></div>
       <button type="button" class="class-pill glass glass--thin" id="class-pill" hidden aria-haspopup="dialog"></button>
+      <div class="hero-clock" id="hero-clock" hidden></div>
     </section>
 
     <div class="toolbar" id="toolbar" hidden></div>
@@ -61,6 +64,7 @@
 
     <footer class="site-footer">
       <p>식단과 일정은 유치원 사정에 따라 바뀔 수 있습니다.</p>
+      <p class="weather-credit">날씨 · 미세먼지: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> 예보 (참고용)</p>
       <p><a href="admin.html">관리자</a></p>
     </footer>
   </main>

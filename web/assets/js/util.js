@@ -297,3 +297,20 @@ export function isForClass(event, className) {
   const targets = parseTargets(event.target);
   return !targets.length || targets.includes(className);
 }
+
+/**
+ * 받침에 맞는 조사를 고릅니다. josa('개천절', '이라', '라') → '이라'
+ * '으로'는 ㄹ 받침 뒤에서 '로'가 됩니다. 한글 · 숫자로 끝나지 않으면 '이(가)'처럼 둘 다 씁니다.
+ */
+export function josa(word, withFinal, withoutFinal) {
+  const text = String(word || '').replace(/[\s'"‘’“”()[\]{}<>.,!?~·-]+$/u, '');
+  const last = text.slice(-1);
+  const code = last.charCodeAt(0);
+  let final;
+  if (code >= 0xac00 && code <= 0xd7a3) final = (code - 0xac00) % 28;
+  else if (/[0-9]/.test(last)) final = '178'.includes(last) ? 8 : '036'.includes(last) ? 1 : 0;
+  else return `${withFinal}(${withoutFinal})`;
+  if (final === 0) return withoutFinal;
+  if (final === 8 && withFinal === '으로') return withoutFinal;
+  return withFinal;
+}

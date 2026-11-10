@@ -5,6 +5,9 @@ import { api, IS_DEMO } from './api.js';
 import { icon } from './icons.js';
 import { initNavbar, initTabBar, openSheet, onSwipe, renderEmpty, renderError, toast } from './ui.js';
 import { prefs } from './prefs.js';
+import { createClock } from './clock.js';
+import { getWeather, currentWeather, isStale } from './weather.js';
+import { buildBrief, greetingFor, fullDateLabel } from './brief.js';
 import * as U from './util.js';
 
 const TABS = {
@@ -41,6 +44,12 @@ let homeCalendarSeq = 0;
 let tabbar;
 let scrollToTodayPending = true;
 let knownClasses = [];
+let homeBriefData = null; // 오늘 안내 문장용: 이번 달 + 다음 달 일정 · 식단 · 공휴일
+let weatherData = null;
+let weatherLoading = false;
+let briefKey = '';
+let clock = null;
+const PLACE = (CONFIG.WEATHER && CONFIG.WEATHER.PLACE) || '';
 
 // ─── 우리 반 ──────────────────────────────────
 
@@ -181,7 +190,6 @@ async function viewHome() {
   const todayHoliday = holidayName(current, today);
 
   const todayMeals = U.sortMeals(meals.filter((m) => m.date === today));
-  const todayEvents = schedules.filter((s) => s.date === today);
   // 다가오는 일정에는 공휴일도 함께 보여줍니다 (같은 날이면 공휴일 먼저).
   const upcoming = [
     ...holidays.map((h) => ({ date: h.date, category: '공휴일', title: h.name, detail: '', holiday: true })),
@@ -195,13 +203,8 @@ async function viewHome() {
     ? U.sortMeals(meals.filter((m) => m.date === nextMealDate))
     : [];
 
-  const [, m, d] = today.split('-').map(Number);
   const weekend = [0, 6].includes(U.weekdayIndex(today));
-  const summary = [
-    todayHoliday,
-    todayEvents.length ? `일정 ${todayEvents.length}개` : '',
-    todayMeals.length ? `식단 ${todayMeals.length}개` : ''
-  ].filter(Boolean).join(' · ') || (weekend ? '즐거운 주말 보내세요' : '오늘 등록된 안내가 없어요');
+  homeBriefData = { schedules, meals, holidays };
 
   // 앞으로 7일 안에 등록된 식단이 없으면 nextMealDate가 비어 있습니다.
   const nextLabel = !nextMeals.length ? ''
@@ -210,25 +213,6 @@ async function viewHome() {
   // 가로줄 단위로 배치해 PC에서도 나란히 놓인 카드의 높이가 맞도록 합니다.
   return `
     <div class="home fade-in">
-      <section class="card glass today-hero">
-        <div class="today-hero__date">
-          <div class="date-tile" aria-hidden="true">
-            <span class="date-tile__month">${m}월</span>
-            <span class="date-tile__day">${d}</span>
-          </div>
-          <div>
-            <p class="today-hero__weekday">${U.weekdayName(today)}요일</p>
-            <p class="today-hero__summary">${esc(summary)}</p>
-          </div>
-        </div>
-        <div class="today-hero__events">
-          <h2 class="mini-title">${icon('calendar', 16)}오늘 일정</h2>
-          ${todayEvents.length
-            ? todayEvents.map((e) => renderEventRow(e)).join('')
-            : '<p class="muted-line">오늘은 특별한 일정이 없어요</p>'}
-        </div>
-      </section>
-
       <section class="card glass calendar home-calendar" id="home-calendar" aria-label="${U.formatMonthLabel(state.homeYear, state.homeMonth)} 달력">
         ${homeCalendarCard()}
       </section>
@@ -247,7 +231,7 @@ async function viewHome() {
           </section>` : ''}
       </div>
 
-      <section class="card glass">
+      <section class="card glass" id="home-upcoming">
         ${cardTitle('list', '다가오는 일정', upcoming.length ? `<button type="button" class="btn btn--plain btn--sm" data-action="goto" data-tab="schedule">전체 보기</button>` : '')}
         ${upcoming.length
           ? `<div class="upcoming-list">${upcoming.map((e) => renderEventRow(e, { showDate: true })).join('')}</div>`
@@ -296,15 +280,98 @@ async function changeHomeMonth(delta) {
 }
 
 /** 오늘 화면 달력에서 날짜를 누르면 그날 내용을 팝업으로 보여줍니다. */
-function openDayPopup(date) {
+function openDayPopup(date, data = homeCalendarData) {
   const rel = U.relativeDayLabel(date, today);
   const showRel = Math.abs(U.dayDiff(today, date)) <= 2;
   const content = U.el(`
     <div class="day-popup">
       ${showRel ? `<p class="day-popup__rel"><span class="chip tone-blue">${rel}</span></p>` : ''}
-      ${dayDetailBody(date, homeCalendarData)}
+      ${dayDetailBody(date, data)}
     </div>`);
   openSheet({ title: U.formatDateLabel(date), content });
+}
+
+// ─── 오늘 안내 (인사말 · 일정 · 날씨 · 옷차림) ──
+
+function setHomeHero(on) {
+  $('#hero').classList.toggle('hero--home', on);
+  $('#hero-clock').hidden = !on;
+  if (!on) {
+    $('#brief').hidden = true;
+    $('#hero-weather').hidden = true;
+  }
+  if (!clock) return;
+  if (on) clock.start();
+  else clock.stop();
+}
+
+function briefStateKey(now) {
+  return `${U.ymd(now)}|${greetingFor(now.getHours())}|${now.getHours() < (CONFIG.TOMORROW_FROM_HOUR ?? 14)}|${now.getHours() >= 10}`;
+}
+
+function weatherLine(current) {
+  const range = [
+    Number.isFinite(current.max) ? `최고 ${current.max}°` : '',
+    Number.isFinite(current.min) ? `최저 ${current.min}°` : ''
+  ].filter(Boolean).join(' ');
+  return `
+    <span class="hero-weather__now">${icon(current.info.icon, 17)}${esc(PLACE)} ${esc(current.info.label)}${Number.isFinite(current.temp) ? ` <b>${current.temp}°</b>` : ''}</span>
+    ${range ? `<span>${range}</span>` : ''}
+    ${current.dust ? `<span><i class="dust-dot tone-${current.dust.tone}"></i>미세먼지 ${current.dust.label}</span>` : ''}`;
+}
+
+/** 오늘 탭 머리: 인사말 · 날짜 · 날씨 · 안내 문장을 지금 시각 기준으로 다시 그립니다. */
+function renderHomeHero() {
+  if (state.tab !== 'home') return;
+  const now = new Date();
+  briefKey = briefStateKey(now);
+  $('#page-title').textContent = greetingFor(now.getHours());
+  $('#page-subtitle').textContent = fullDateLabel(U.ymd(now));
+
+  const current = currentWeather(weatherData, U.ymd(now));
+  if (clock) clock.setWeather(current, PLACE);
+  const line = $('#hero-weather');
+  line.hidden = !current;
+  line.innerHTML = current ? weatherLine(current) : '';
+
+  const box = $('#brief');
+  if (!homeBriefData) {
+    box.hidden = true;
+    return;
+  }
+  const brief = buildBrief({ now, data: homeBriefData, weather: weatherData, fromHour: CONFIG.TOMORROW_FROM_HOUR ?? 14 });
+  const actions = brief.chips.map((chip) => `
+    <button type="button" class="brief-chip glass glass--thin" data-brief="${chip.kind}"${chip.date ? ` data-date="${chip.date}"` : ''}>
+      <i class="brief-chip__dot" aria-hidden="true"></i>${esc(chip.label)}${icon('chevronRight', 14)}
+    </button>`).join('');
+  const tips = brief.tips.map((t) => `<span class="tip-chip tone-${t.tone}">${icon(t.icon, 15)}${esc(t.label)}</span>`).join('');
+  box.hidden = false;
+  box.innerHTML = `
+    <p class="brief__text">${brief.html}</p>
+    ${actions || tips ? `<div class="brief__chips">${actions}${tips}</div>` : ''}`;
+}
+
+function loadWeather({ force = false } = {}) {
+  if (weatherLoading || !CONFIG.WEATHER) return;
+  weatherLoading = true;
+  getWeather({ force })
+    .then((data) => {
+      weatherData = data;
+    })
+    .catch(() => {
+      // 날씨를 못 받아도 일정 안내와 시계는 그대로 보여 줍니다.
+    })
+    .finally(() => {
+      weatherLoading = false;
+      renderHomeHero();
+    });
+}
+
+/** 1분마다: 오후 2시 · 저녁처럼 안내 기준이 바뀌면 다시 그리고, 30분 지난 날씨는 새로 받습니다. */
+function onClockMinute(now) {
+  if (state.tab !== 'home') return;
+  if (briefStateKey(now) !== briefKey) renderHomeHero();
+  if (!document.hidden && isStale(weatherData)) loadWeather();
 }
 
 // ─── 달력 ─────────────────────────────────────
@@ -599,10 +666,10 @@ async function render() {
 
   $('#page-title').textContent = tab.title;
   $('#navbar-title').textContent = tab.title;
-  $('#page-subtitle').textContent = state.tab === 'home'
-    ? `${U.formatDateLabel(today, { weekday: false, year: true })} ${U.weekdayName(today)}요일`
-    : tab.subtitle;
+  $('#page-subtitle').textContent = tab.subtitle || '';
   document.title = `${tab.title} · ${CONFIG.SCHOOL_NAME}`;
+  setHomeHero(state.tab === 'home');
+  renderHomeHero();
   renderToolbar();
 
   view.setAttribute('aria-busy', 'true');
@@ -615,6 +682,7 @@ async function render() {
     updateClassPill();
     if (autoScroll && state.year === thisYear && state.month === thisMonth) scrollToToday();
     if (state.tab === 'home') {
+      renderHomeHero();
       onSwipe($('#home-calendar'), { left: () => changeHomeMonth(1), right: () => changeHomeMonth(-1) });
     }
     if (state.tab === 'calendar') {
@@ -659,6 +727,19 @@ function init() {
 
   initNavbar($('#navbar'), $('#page-title'));
   $('#class-pill').addEventListener('click', openClassPicker);
+
+  clock = createClock({ onMinute: onClockMinute });
+  $('#hero-clock').append(clock.root);
+  loadWeather();
+  $('#brief').addEventListener('click', (event) => {
+    const chip = event.target.closest('[data-brief]');
+    if (!chip) return;
+    if (chip.dataset.brief === 'day') openDayPopup(chip.dataset.date, homeBriefData);
+    if (chip.dataset.brief === 'upcoming') {
+      const target = $('#home-upcoming');
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
   tabbar = initTabBar($('#tabbar'), {
     onChange: (name) => {
       if (name === state.tab) return;
@@ -735,6 +816,7 @@ function init() {
       api.clearCache();
       render();
     }
+    if (isStale(weatherData)) loadWeather();
   });
 
   window.addEventListener('hashchange', () => {

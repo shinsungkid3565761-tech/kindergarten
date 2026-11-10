@@ -5,5 +5,11 @@
 export const CONFIG = {
   SCHOOL_NAME: '신성대학교부속유치원',
   API_URL: 'https://script.google.com/macros/s/AKfycbzEZdp7At-kBdoTcDuQZWYO9cPpuaegPGUeooEGDfytBT3ZhZPNwghviINdR20o4OXk8A/exec',
-  REQUEST_TIMEOUT_MS: 20000
+  REQUEST_TIMEOUT_MS: 20000,
+
+  // 오늘 화면 날씨 · 미세먼지 위치 (Open-Meteo 무료 예보, 키 필요 없음)
+  WEATHER: { PLACE: '당진', LATITUDE: 36.8897, LONGITUDE: 126.6458 },
+
+  // 이 시각(24시간제)부터는 '오늘' 대신 '내일' 일정 · 옷차림을 먼저 알려 줍니다.
+  TOMORROW_FROM_HOUR: 14
 };
