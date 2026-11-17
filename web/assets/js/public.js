@@ -47,6 +47,7 @@ let knownClasses = [];
 let homeBriefData = null; // 오늘 안내 문장용: 이번 달 + 다음 달 일정 · 식단 · 공휴일
 let weatherData = null;
 let weatherLoading = false;
+let weatherFailedAt = 0; // 날씨 서버가 응답하지 않은 시각 (5분 뒤 다시 시도)
 let briefKey = '';
 let clock = null;
 const PLACE = (CONFIG.WEATHER && CONFIG.WEATHER.PLACE) || '';
@@ -351,7 +352,17 @@ function renderHomeHero() {
     <p class="brief__label"><span class="auto-badge">${icon('sparkles', 14)}자동 안내</span>등록된 일정${brief.hasForecast ? '과 날씨 예보' : ''}로 자동으로 만든 문장이에요</p>
     <p class="brief__text">${brief.html}</p>
     ${actions || tips ? `<div class="brief__chips">${actions}${tips}</div>` : ''}
-    <p class="brief__foot">선생님이 직접 작성한 글이 아니에요.${brief.hasForecast ? ' 날씨 · 미세먼지는 예보 값이라 실제와 조금 다를 수 있어요.' : ''}</p>`;
+    <p class="brief__foot">선생님이 직접 작성한 글이 아니에요.${weatherNote(brief)}</p>`;
+}
+
+/** 안내 아래 작은 글씨: 예보 안내 · 날씨 서버 장애 안내 */
+function weatherNote(brief) {
+  if (weatherData && weatherData.offline) {
+    const at = new Date(weatherData.fetchedAt);
+    return ` 날씨 서버가 잠시 응답하지 않아 ${at.getMonth() + 1}월 ${at.getDate()}일 ${at.getHours()}시에 받은 예보로 안내해요.`;
+  }
+  if (!weatherData && weatherFailedAt) return ' 날씨 서버가 잠시 응답하지 않아 날씨 안내는 빠졌어요. 잠시 뒤 저절로 다시 불러와요.';
+  return brief.hasForecast ? ' 날씨 · 미세먼지는 예보 값이라 실제와 조금 다를 수 있어요.' : '';
 }
 
 function loadWeather({ force = false } = {}) {
@@ -360,9 +371,11 @@ function loadWeather({ force = false } = {}) {
   getWeather({ force })
     .then((data) => {
       weatherData = data;
+      weatherFailedAt = data.offline ? Date.now() : 0;
     })
     .catch(() => {
       // 날씨를 못 받아도 일정 안내와 시계는 그대로 보여 줍니다.
+      weatherFailedAt = Date.now();
     })
     .finally(() => {
       weatherLoading = false;
@@ -374,7 +387,7 @@ function loadWeather({ force = false } = {}) {
 function onClockMinute(now) {
   if (state.tab !== 'home') return;
   if (briefStateKey(now) !== briefKey) renderHomeHero();
-  if (!document.hidden && isStale(weatherData)) loadWeather();
+  if (!document.hidden && isStale(weatherData) && Date.now() - weatherFailedAt > 5 * 60 * 1000) loadWeather();
 }
 
 // ─── 달력 ─────────────────────────────────────

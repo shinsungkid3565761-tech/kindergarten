@@ -6,7 +6,7 @@ import { CONFIG } from './config.js';
 
 const CACHE_KEY = 'kg-weather-v1';
 const FRESH_MS = 20 * 60 * 1000;
-const STALE_OK_MS = 18 * 3600 * 1000; // 인터넷이 잠시 안 될 때 쓸 수 있는 예전 날씨
+const STALE_OK_MS = 48 * 3600 * 1000; // 날씨 서버가 잠시 멈췄을 때 대신 쓸 수 있는 예전 예보 (7일 예보라 이틀은 쓸 만합니다)
 const TIMEOUT_MS = 10000;
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
@@ -182,7 +182,7 @@ let pending = null;
 
 /**
  * 날씨를 돌려줍니다. 20분 안에 받은 것이 있으면 그대로 쓰고,
- * 새로 받지 못하면 예전 것(18시간 이내)이라도 돌려줍니다.
+ * 새로 받지 못하면 예전 것(48시간 이내)이라도 offline: true 를 붙여 돌려줍니다.
  */
 export function getWeather({ force = false } = {}) {
   if (!CONFIG.WEATHER) return Promise.reject(new Error('날씨 위치가 설정되지 않았어요.'));
@@ -195,7 +195,8 @@ export function getWeather({ force = false } = {}) {
         return data;
       })
       .catch((err) => {
-        if (cached && Date.now() - cached.fetchedAt < STALE_OK_MS) return cached;
+        // offline: 새로 받지 못해 예전 예보를 대신 쓰는 중이라는 표시
+        if (cached && Date.now() - cached.fetchedAt < STALE_OK_MS) return { ...cached, offline: true };
         throw err;
       })
       .finally(() => {
@@ -230,17 +231,23 @@ function minOf(values) {
 }
 
 /** 지금 날씨 (시계 옆 표시용) */
-export function currentWeather(data, today) {
+export function currentWeather(data, today, now = new Date()) {
   if (!data) return null;
   const day = data.daily.find((d) => d.date === today);
-  const nowHour = data.current.time ? data.current.time.slice(0, 13) : '';
+  // 받은 지 오래된 예보(서버 장애 등)라면 '지금' 값 대신 시간별 예보에서 지금 시각 값을 씁니다.
+  const nowHour = `${today}T${String(now.getHours()).padStart(2, '0')}`;
+  const fresh = Boolean(data.current.time) && data.current.time.slice(0, 13) === nowHour;
+  const hour = data.hourly.find((h) => h.time.slice(0, 13) === nowHour);
   const airHour = data.air && data.air.hourly.find((h) => h.time.slice(0, 13) === nowHour);
-  const air = (data.air && data.air.current) || airHour || null;
-  const temp = Number.isFinite(data.current.temp) ? data.current.temp : null;
+  const air = (fresh && data.air && data.air.current) || airHour || null;
+  const source = fresh ? data.current : hour
+    ? { temp: hour.temp, code: hour.code, isDay: now.getHours() >= 6 && now.getHours() < 18 }
+    : { temp: null, code: null, isDay: true };
+  const temp = Number.isFinite(source.temp) ? source.temp : null;
   if (temp === null && !day) return null;
   return {
     temp: round(temp),
-    info: weatherInfo(data.current.code, data.current.isDay !== false),
+    info: weatherInfo(source.code ?? (day && day.code), source.isDay !== false),
     max: day ? round(day.max) : null,
     min: day ? round(day.min) : null,
     dust: air ? dustGrade(air.pm10, air.pm25) : null
