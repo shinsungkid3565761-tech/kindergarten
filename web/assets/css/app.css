@@ -412,35 +412,78 @@
 }
 
 .clock {
+  /* 낮: 노란 문자판 */
+  --face-1: #fdea80;
+  --face-2: #f2cd33;
+  --ink: #16150e;
+  --ink-2: #2c2814;
+  --rim: rgba(255, 255, 255, 0.8);
+  --face-shadow: rgba(150, 110, 0, 0.22);
   display: grid;
   justify-items: center;
   text-align: center;
 }
 
+/* 날씨에 따라 문자판 색을 살짝 바꿉니다 (흐리면 옅게, 눈 오면 크림색) */
+.clock[data-fx="cloud"],
+.clock[data-fx="fog"] {
+  --face-1: #fbf3cc;
+  --face-2: #ecdc98;
+}
+
+.clock[data-fx="rain"] {
+  --face-1: #f9f3d6;
+  --face-2: #e6d79a;
+}
+
+.clock[data-fx="storm"] {
+  --face-1: #efe7c4;
+  --face-2: #d3c384;
+}
+
+.clock[data-fx="snow"] {
+  --face-1: #fdfaee;
+  --face-2: #efe5bf;
+}
+
+/* 밤: 남색 밤하늘 문자판 (해 진 뒤 ~ 해 뜨기 전) */
+.clock.clock--night {
+  --face-1: #3a4f94;
+  --face-2: #131b3c;
+  --ink: #f6f2e2;
+  --ink-2: #e4dfca;
+  --rim: rgba(255, 255, 255, 0.3);
+  --face-shadow: rgba(20, 30, 80, 0.32);
+}
+
 .clock__face {
   width: 112px;
   aspect-ratio: 1;
-  filter: drop-shadow(0 10px 14px rgba(150, 110, 0, 0.22)) drop-shadow(0 2px 3px rgba(120, 88, 0, 0.18));
+  filter: drop-shadow(0 10px 14px var(--face-shadow)) drop-shadow(0 2px 3px var(--face-shadow));
 }
 
 .clock__face svg {
   display: block;
   width: 100%;
   height: 100%;
-  overflow: visible;
+  overflow: hidden; /* 날씨 효과가 문자판 밖으로 나가 페이지 폭을 넓히지 않도록 */
 }
 
-.clock__stop1 { stop-color: #fdea80; }
-.clock__stop2 { stop-color: #f2cd33; }
+.clock__stop1 { stop-color: var(--face-1); }
+.clock__stop2 { stop-color: var(--face-2); }
+
+.clock--night .clock__sheen {
+  opacity: 0.35;
+}
 
 .clock__rim {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.8);
+  stroke: var(--rim);
   stroke-width: 1.4;
 }
 
 .clock__tick {
-  stroke: #1c1a12;
+  stroke: var(--ink);
   stroke-width: 1.3;
   stroke-linecap: round;
   opacity: 0.26;
@@ -462,11 +505,11 @@
   font-size: 35px;
   font-weight: 800;
   letter-spacing: -1px;
-  fill: #16150e;
+  fill: var(--ink);
 }
 
 .clock__cx {
-  fill: #2c2814;
+  fill: var(--ink-2);
 }
 
 .clock__wd {
@@ -480,7 +523,7 @@
 }
 
 .clock__wx {
-  color: #2c2814;
+  color: var(--ink-2);
 }
 
 .clock__temp {
@@ -490,7 +533,7 @@
 }
 
 .clock__stem {
-  stroke: #16150e;
+  stroke: var(--ink);
   stroke-width: 3.4;
   stroke-linecap: round;
 }
@@ -502,7 +545,159 @@
 }
 
 .clock__cap {
-  fill: #16150e;
+  fill: var(--ink);
+}
+
+/* ---- 문자판 날씨 효과 (숫자 · 바늘 아래, 문자판 안에서만) ---- */
+
+.clock__fx * {
+  transform-box: view-box;
+}
+
+.fx-sun__glow {
+  transform-origin: 162px 38px;
+  animation: fx-pulse 5s ease-in-out infinite;
+}
+
+.fx-sun__rays {
+  fill: #fff;
+  opacity: 0.2;
+  transform-origin: 162px 38px;
+  animation: fx-spin 90s linear infinite;
+}
+
+.fx-moon__glow {
+  transform-origin: 160px 40px;
+  animation: fx-pulse 6s ease-in-out infinite;
+}
+
+.fx-moon {
+  fill: #fff4c8;
+  opacity: 0.9;
+}
+
+.fx-star {
+  fill: #fff8dc;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: fx-twinkle 3s ease-in-out infinite;
+}
+
+.fx-clouds {
+  fill: #fff;
+  opacity: 0.7;
+}
+
+.clock--night .fx-clouds {
+  fill: #b9c3e6;
+  opacity: 0.32;
+}
+
+[data-fx="rain"] .fx-clouds,
+[data-fx="storm"] .fx-clouds {
+  fill: #c9d3e2;
+  opacity: 0.6;
+}
+
+.fx-drift {
+  animation: fx-drift 50s linear infinite;
+}
+
+.fx-drop {
+  stroke: rgba(50, 105, 190, 0.55);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  animation: fx-rain 0.9s linear infinite;
+}
+
+.fx-rain.is-heavy .fx-drop {
+  stroke-width: 1.9;
+  stroke: rgba(40, 90, 175, 0.6);
+}
+
+.clock--night .fx-drop {
+  stroke: rgba(205, 222, 255, 0.75);
+}
+
+.fx-fall {
+  animation: fx-snow 8s linear infinite;
+}
+
+.fx-flake {
+  fill: #fff;
+  stroke: rgba(90, 120, 170, 0.35);
+  stroke-width: 0.6;
+  animation: fx-sway 3s ease-in-out infinite alternate;
+}
+
+.fx-fog__band {
+  fill: #fff;
+  opacity: 0.6;
+  animation: fx-haze 12s ease-in-out infinite alternate;
+}
+
+.fx-flash {
+  fill: #fff;
+  opacity: 0;
+  animation: fx-flash 7s linear infinite;
+}
+
+@keyframes fx-pulse {
+  0%, 100% { opacity: 0.75; transform: scale(0.94); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+
+@keyframes fx-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fx-twinkle {
+  0%, 100% { opacity: 0.25; transform: scale(0.7); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+@keyframes fx-drift {
+  from { transform: translateX(-150px); }
+  to { transform: translateX(150px); }
+}
+
+@keyframes fx-rain {
+  0% { transform: translate(14px, -130px); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translate(-14px, 130px); opacity: 0; }
+}
+
+@keyframes fx-snow {
+  0% { transform: translateY(-120px); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(120px); opacity: 0; }
+}
+
+@keyframes fx-sway {
+  from { transform: translateX(-5px); }
+  to { transform: translateX(5px); }
+}
+
+@keyframes fx-haze {
+  from { transform: translateX(-18px); }
+  to { transform: translateX(48px); }
+}
+
+@keyframes fx-flash {
+  0%, 86%, 100% { opacity: 0; }
+  87% { opacity: 0.55; }
+  88.5% { opacity: 0.08; }
+  90% { opacity: 0.4; }
+  92% { opacity: 0; }
+}
+
+/* 움직임 줄이기: 효과는 멈춘 그림으로만 */
+@media (prefers-reduced-motion: reduce) {
+  .clock__fx * {
+    animation: none !important;
+  }
 }
 
 .clock__sec-line {

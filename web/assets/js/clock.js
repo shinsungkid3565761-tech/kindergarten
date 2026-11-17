@@ -1,6 +1,7 @@
 // 아날로그 시계 위젯 (노란 스퀘클 문자판 + 요일·날짜 / 날씨 표시 + 디지털 시각)
 
 import { icon } from './icons.js';
+import { weatherFx, FX_DEFS } from './clock-fx.js';
 import * as U from './util.js';
 
 const C = 100;
@@ -66,12 +67,15 @@ function template() {
               <stop offset="0" stop-color="#fff" stop-opacity="0.55"/>
               <stop offset="0.55" stop-color="#fff" stop-opacity="0"/>
             </radialGradient>
+            <clipPath id="kg-clock-clip"><path d="${FACE}"/></clipPath>
+            ${FX_DEFS}
             <filter id="kg-hand-shadow" x="-50%" y="-50%" width="200%" height="200%">
               <feDropShadow dx="0" dy="1.4" stdDeviation="1.3" flood-color="#3b2a00" flood-opacity="0.32"/>
             </filter>
           </defs>
           <path class="clock__bg" d="${FACE}" fill="url(#kg-clock-fill)"/>
-          <path d="${FACE}" fill="url(#kg-clock-sheen)"/>
+          <g class="clock__fx" clip-path="url(#kg-clock-clip)" aria-hidden="true"></g>
+          <path class="clock__sheen" d="${FACE}" fill="url(#kg-clock-sheen)"/>
           <path class="clock__rim" d="${FACE}"/>
           <g>${ticks()}</g>
           <g>${numerals()}</g>
@@ -106,12 +110,17 @@ function template() {
 
 const AMPM = (h) => (h < 12 ? '오전' : '오후');
 
+// 한 화면에 시계가 여러 개여도 SVG id(그라데이션 · 필터)가 겹치지 않도록 번호를 붙입니다.
+let clockCount = 0;
+const scopeIds = (markup, uid) => markup.replace(/(id="|url\(#)(kg-[a-z-]+)/g, `$1$2-${uid}`);
+
 /**
  * 시계를 만듭니다. start()로 움직이고, stop()으로 멈춥니다.
  * onMinute(now): 분이 바뀔 때마다 불립니다 (인사말 · 날씨 새로 고침용).
  */
 export function createClock({ onMinute } = {}) {
-  const root = U.el(template());
+  const uid = ++clockCount;
+  const root = U.el(scopeIds(template(), uid));
   const svg = root.querySelector('svg');
   const hands = {
     hour: root.querySelector('[data-hand="hour"]'),
@@ -127,10 +136,22 @@ export function createClock({ onMinute } = {}) {
   const temp = root.querySelector('.clock__temp');
   const meta = root.querySelector('.clock__meta');
   const dust = root.querySelector('.clock__dust');
+  const fx = root.querySelector('.clock__fx');
+  let fxKey = '';
+  let weatherNight = null; // 날씨가 알려 준 낮/밤 (없으면 시각으로 판단)
   let timer = 0;
   let lastMinute = -1;
   let weatherLabel = '';
   let labelDirty = false;
+
+  /** 문자판 날씨 효과: 날씨가 바뀔 때만 다시 그립니다. */
+  function setFx(weather) {
+    const key = weather ? `${weather.kind}|${weather.severity}|${weather.isDay}` : '';
+    if (key === fxKey) return;
+    fxKey = key;
+    fx.innerHTML = scopeIds(weatherFx(weather), uid);
+    root.dataset.fx = weather ? weather.kind : '';
+  }
 
   const rotate = (el, deg) => el.setAttribute('transform', `rotate(${f1(deg)} 100 100)`);
 
@@ -148,6 +169,7 @@ export function createClock({ onMinute } = {}) {
     const minuteKey = h * 60 + m;
     if (minuteKey !== lastMinute || labelDirty) {
       labelDirty = false;
+      root.classList.toggle('clock--night', weatherNight ?? (h < 6 || h >= 18));
       wd.textContent = U.weekdayName(U.ymd(now));
       day.textContent = String(now.getDate());
       svg.setAttribute('aria-label', `지금 ${AMPM(h)} ${h % 12 || 12}시 ${m}분${weatherLabel ? `, ${weatherLabel}` : ''}`);
@@ -180,8 +202,13 @@ export function createClock({ onMinute } = {}) {
         meta.textContent = '';
         dust.hidden = true;
         weatherLabel = '';
+        weatherNight = null;
+        setFx(null);
+        labelDirty = true;
         return;
       }
+      weatherNight = current.isDay === false;
+      setFx({ kind: current.info.kind, severity: current.info.severity, isDay: !weatherNight });
       const hasTemp = Number.isFinite(current.temp);
       wx.toggleAttribute('hidden', !hasTemp);
       if (hasTemp) {

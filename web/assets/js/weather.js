@@ -248,6 +248,7 @@ export function currentWeather(data, today, now = new Date()) {
   return {
     temp: round(temp),
     info: weatherInfo(source.code ?? (day && day.code), source.isDay !== false),
+    isDay: source.isDay !== false,
     max: day ? round(day.max) : null,
     min: day ? round(day.min) : null,
     dust: air ? dustGrade(air.pm10, air.pm25) : null
