@@ -3,11 +3,11 @@
  * Code.gs - Apps Script 백엔드 (구글시트 + JSON API)
  *
  * - 공개 페이지(GitHub Pages)  : GET  ?action=month&year=2026&month=3
- * - 관리자 페이지              : POST {action: 'login' | 'save' | 'delete' | 'bulkAdd' | 'replaceMonths', ...}
+ * - 관리자 페이지              : POST {action: 'login' | 'save' | 'delete' | 'bulkAdd' | 'replaceMonths' | 'saveClasses', ...}
  * - 관리자 비밀번호            : 구글시트 [설정] 탭의 '관리자 비밀번호' 칸
  * - 공휴일 (선택)               : [설정] 탭의 '공휴일 API 키' 칸에 공공데이터포털 인증키
  *                                 (한국천문연구원 특일 정보 = 네이버 달력과 같은 출처)
- * - 반별 일정 (선택)            : [설정] 탭의 '반 목록'에 반 이름을 쉼표로 적고,
+ * - 반별 일정 (선택)            : 관리자 페이지 '반 관리'(또는 [설정] 탭의 '반 목록')에 반 이름을 적고,
  *                                 [교육일정] 탭 '대상 반' 칸에 반 이름을 적습니다. (비우면 전체)
  */
 
@@ -39,13 +39,16 @@ const SHEET_HEADERS = {
 
 const SCHOOL_NAME = '신성대학교부속유치원';
 
+// 관리자 페이지가 '이 코드가 새 버전으로 배포됐는지' 확인하는 번호 (기능이 바뀔 때 올립니다)
+const API_VERSION = 4;
+
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;   // 관리자 로그인 유지 시간 (12시간)
 const CACHE_TTL_SEC = 300;                   // 월별 데이터 캐시 (5분, 관리자 수정 시 즉시 초기화)
 const MAX_LOGIN_FAILURES = 10;               // 10분 동안 허용하는 로그인 실패 횟수
 const MAX_BULK_ITEMS = 500;                  // 일괄 등록 1회 최대 건수
 
 // 쓰기 요청(POST 전용)
-const WRITE_ACTIONS = { login: true, save: true, 'delete': true, bulkAdd: true, replaceMonths: true };
+const WRITE_ACTIONS = { login: true, save: true, 'delete': true, bulkAdd: true, replaceMonths: true, saveClasses: true };
 
 // 시트 종류별 정의 (열 순서 = 시트 열 순서)
 const KINDS = {
@@ -151,11 +154,12 @@ function handleRequest_(method, params) {
 
     switch (action) {
       case 'ping':
-        return ok_({ school: SCHOOL_NAME, time: new Date().toISOString() });
+        return ok_({ school: SCHOOL_NAME, apiVersion: API_VERSION, time: new Date().toISOString() });
 
       case 'month': {
         const data = getMonthDataCached_(params.year, params.month);
         data.holidays = getHolidays_(Number(params.year), Number(params.month));
+        data.apiVersion = API_VERSION;
         return ok_(data);
       }
 
@@ -177,6 +181,10 @@ function handleRequest_(method, params) {
       case 'replaceMonths':
         requireAdmin_(params.token);
         return ok_(replaceMonths_(params.kind, params.months, params.items));
+
+      case 'saveClasses':
+        requireAdmin_(params.token);
+        return ok_(saveClasses_(params.classes));
 
       default:
         throw apiError_('INVALID', '알 수 없는 요청입니다: ' + action);
@@ -224,6 +232,42 @@ function getClassList_() {
     .split(/[,，·\n]/)
     .map(function(name) { return name.trim(); })
     .filter(function(name, index, list) { return name && list.indexOf(name) === index; });
+}
+
+/**
+ * 관리자 페이지 '반 관리'에서 반 목록을 저장합니다. ([설정] 탭 '반 목록' 칸)
+ * 구글시트를 열 수 없는 환경에서도 반을 바꿀 수 있게 합니다.
+ */
+function saveClasses_(classes) {
+  if (!Array.isArray(classes)) throw apiError_('INVALID', '반 목록 형식이 올바르지 않습니다.');
+
+  const names = [];
+  classes.forEach(function(raw) {
+    const name = String(raw == null ? '' : raw).replace(/[,，·\n]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!name) return;
+    if (name.length > 20) throw apiError_('INVALID', '반 이름은 20자까지 쓸 수 있습니다: ' + name);
+    if (names.indexOf(name) === -1) names.push(name);
+  });
+  if (names.length > 30) throw apiError_('INVALID', '반은 30개까지 등록할 수 있습니다.');
+
+  return withLock_(function() {
+    const sheet = createSettingsSheetIfNeeded_(getSpreadsheet_());
+    const labels = sheet.getRange(1, 1, sheet.getLastRow(), 1).getValues();
+    let rowNum = -1;
+    for (let i = 0; i < labels.length; i++) {
+      if (String(labels[i][0]).trim() === CLASS_LIST_LABEL) {
+        rowNum = i + 1;
+        break;
+      }
+    }
+    if (rowNum === -1) throw apiError_('SERVER', '[설정] 탭에서 \'반 목록\' 칸을 찾지 못했습니다.');
+
+    const value = names.join(', ');
+    sheet.getRange(rowNum, 2).setNumberFormat('@').setValue(/^[=+\-@]/.test(value) ? "'" + value : value);
+    settingsCache_ = null;
+    invalidateCache_();
+    return { classes: getClassList_() };
+  });
 }
 
 /**

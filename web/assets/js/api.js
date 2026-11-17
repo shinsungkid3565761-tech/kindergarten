@@ -117,6 +117,11 @@ export const api = {
     return send('POST', { action: 'bulkAdd', token, kind, items });
   },
 
+  /** 반 목록 저장 ([설정] 탭 '반 목록') */
+  saveClasses(token, classes) {
+    return send('POST', { action: 'saveClasses', token, classes });
+  },
+
   /** 지정한 달(['2026-11'])의 기존 항목을 지우고 items로 바꿉니다. */
   replaceMonths(token, kind, months, items) {
     return send('POST', { action: 'replaceMonths', token, kind, months, items });

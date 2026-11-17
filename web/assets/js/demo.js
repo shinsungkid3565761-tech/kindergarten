@@ -136,7 +136,8 @@ export function createDemoBackend() {
       return {
         schedules: withRows('schedule').filter((s) => s.date.startsWith(prefix)).sort(byDate),
         meals: withRows('meal').filter((s) => s.date.startsWith(prefix)).sort(byDate),
-        classes: DEMO_CLASSES,
+        classes: Array.isArray(data.classes) ? data.classes : DEMO_CLASSES,
+        apiVersion: 4,
         holidays: Object.entries(FIXED_HOLIDAYS)
           .filter(([md]) => md.startsWith(pad2(month)))
           .map(([md, name]) => ({ date: `${year}-${md}`, name }))
@@ -161,6 +162,12 @@ export function createDemoBackend() {
       data[kind].splice(findRow(kind, row, original), 1);
       persist();
       return { row };
+    },
+    saveClasses({ classes }) {
+      if (!Array.isArray(classes)) fail('INVALID', '반 목록 형식이 올바르지 않습니다.');
+      data.classes = [...new Set(classes.map((name) => String(name).replace(/[,，·\n]/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean))];
+      persist();
+      return { classes: data.classes };
     },
     replaceMonths({ kind, months, items }) {
       if (!Array.isArray(items) || !items.length) fail('INVALID', '바꿀 내용이 없습니다.');

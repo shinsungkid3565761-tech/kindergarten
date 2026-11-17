@@ -291,11 +291,40 @@ export function parseTargets(text) {
     .filter(Boolean);
 }
 
-/** 반을 고르지 않았거나, 대상 반이 비어 있거나(전체), 우리 반이 포함된 일정이면 true */
+// '대상 반'에 이렇게 적으면 모든 반 일정으로 봅니다.
+const ALL_CLASS_WORDS = new Set(['전체', '전체반', '모든반', '모두', '공통', '전원', '전학급', '전체학급', 'all']);
+const squash = (text) => String(text || '').replace(/\s+/g, '').toLowerCase();
+
+/** '대상 반' 칸이 모든 반을 뜻하는지 (비어 있음 · 전체 · 전체 반 · 모든 반 …) */
+export function isAllClasses(text) {
+  const parts = String(text || '').split(/[,，、·/\n]+/).map(squash).filter(Boolean);
+  return !parts.length || parts.some((part) => ALL_CLASS_WORDS.has(part));
+}
+
+/**
+ * '대상 반' 칸이 그 반을 가리키는지. 선생님이 적는 여러 모양을 받아 줍니다.
+ * '햇님반, 달님반' · '햇님반 달님반' · '햇님' · '햇님 반' → 햇님반
+ */
+export function targetIncludesClass(text, className) {
+  const me = squash(className);
+  if (!me) return false;
+  const base = me.replace(/반$/, '');
+  return String(text || '').split(/[,，、·/\n]+/).some((part) => {
+    if (squash(part) === me) return true; // '햇님 반'
+    return part.split(/\s+/).map(squash).some((word) => word === me || (base && word === base));
+  });
+}
+
+/** 반을 고르지 않았거나, 대상 반이 전체(비어 있음 · '전체' 등)이거나, 우리 반이 포함된 일정이면 true */
 export function isForClass(event, className) {
   if (!className) return true;
-  const targets = parseTargets(event.target);
-  return !targets.length || targets.includes(className);
+  return isAllClasses(event.target) || targetIncludesClass(event.target, className);
+}
+
+/** 반 목록에 없는 이름이 '대상 반'에 적혀 있으면 그 글자를 돌려줍니다 (관리자 화면 경고용) */
+export function unknownTargets(text, classes) {
+  if (!classes.length || isAllClasses(text)) return [];
+  return parseTargets(text).filter((part) => !classes.some((name) => targetIncludesClass(part, name)));
 }
 
 /**

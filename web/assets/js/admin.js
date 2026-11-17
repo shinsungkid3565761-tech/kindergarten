@@ -183,6 +183,7 @@ function buildToolbar() {
     <button type="button" class="btn btn--tint" data-act="add">${icon('plus', 18)}새로 추가</button>
     <button type="button" class="btn" data-act="excel">${icon('table', 18)}엑셀</button>
     <button type="button" class="btn" data-act="print">${icon('print', 18)}월간 인쇄</button>
+    <button type="button" class="btn" data-act="classes">${icon('users', 18)}반 관리</button>
     <button type="button" class="btn icon-btn" data-act="refresh" aria-label="새로고침" title="새로고침">${icon('refresh', 18)}</button>`;
 
   actions.addEventListener('click', (event) => {
@@ -190,6 +191,7 @@ function buildToolbar() {
     if (act === 'add') openEditor(null);
     if (act === 'excel') openExcelHub();
     if (act === 'print') printMonth();
+    if (act === 'classes') openClassManager();
     if (act === 'refresh') load({ force: true });
   });
 }
@@ -204,10 +206,12 @@ async function load({ force = false } = {}) {
     const data = await api.getMonth(state.year, state.month, { force });
     if (seq !== loadSeq) return;
     state.data = data;
+    renderNotice();
     renderList();
   } catch (err) {
     if (seq !== loadSeq) return;
     state.data = null;
+    $('#admin-notice').hidden = true;
     listEl.innerHTML = renderError(err);
   }
 }
@@ -223,7 +227,8 @@ function itemSummary(kind, item) {
     category: item.category,
     title: item.title,
     sub: item.detail,
-    targets: U.parseTargets(item.target)
+    targets: U.parseTargets(item.target),
+    unknown: U.unknownTargets(item.target, (state.data && state.data.classes) || [])
   };
 }
 
@@ -257,7 +262,8 @@ function renderList() {
             <button type="button" class="admin-item" data-row="${item.row}">
               <span class="admin-item__main">
                 <span class="admin-item__meta"><span class="chip tone-${s.tone}">${esc(s.category)}</span>${
-                  s.targets && s.targets.length ? `<span class="chip tone-gray">${icon('users', 12)}${esc(s.targets.join(' · '))}</span>` : ''}</span>
+                  s.targets && s.targets.length ? `<span class="chip tone-gray">${icon('users', 12)}${esc(s.targets.join(' · '))}</span>` : ''}${
+                  s.unknown && s.unknown.length ? `<span class="chip tone-orange" title="반 목록에 없는 이름이라 그 반을 고른 학부모에게는 안 보여요">${icon('alert', 12)}반 이름 확인</span>` : ''}</span>
                 <span class="admin-item__title">${esc(s.title)}</span>
                 ${s.sub ? `<span class="admin-item__sub">${esc(s.sub)}</span>` : ''}
               </span>
@@ -303,6 +309,109 @@ function handleWriteError(err, sheet, errorEl) {
   }
   errorEl.textContent = err.message;
   errorEl.hidden = false;
+}
+
+// ─── 반 관리 · 안내 ───────────────────────────
+
+const CLASS_API_VERSION = 4; // Code.gs 의 API_VERSION 이 이보다 낮으면 '반 관리' 저장이 안 됩니다.
+const serverVersion = () => Number((state.data && state.data.apiVersion) || 0);
+const REDEPLOY_STEPS = 'Apps Script 편집기에 새 Code.gs 전체를 붙여넣고 저장한 뒤, 배포 → 배포 관리 → ✏️ → 버전: 새 버전 → 배포를 눌러 주세요. (주소는 그대로예요)';
+
+/** 목록 위 안내: 예전 Apps Script · 빈 반 목록 · 반 이름이 맞지 않는 일정 */
+function renderNotice() {
+  const box = $('#admin-notice');
+  const data = state.data;
+  const lines = [];
+  if (!data) {
+    box.hidden = true;
+    return;
+  }
+  const classes = data.classes || [];
+  if (!('classes' in data)) {
+    lines.push(`<b>Apps Script가 예전 버전이에요.</b> 그래서 학부모 화면의 <b>우리 반</b> 버튼, 반 관리, 엑셀 '해당 달 바꾸기'가 꺼져 있어요. ${esc(REDEPLOY_STEPS)}`);
+  } else if (!classes.length) {
+    lines.push(`<b>반 목록이 비어 있어서</b> 학부모 화면에 <b>우리 반</b> 버튼이 보이지 않아요. <button type="button" class="link-btn" data-act="classes">반 관리</button>에서 반을 추가해 주세요.`);
+  }
+  if (classes.length) {
+    const odd = data.schedules.filter((e) => U.unknownTargets(e.target, classes).length);
+    if (odd.length) {
+      const names = [...new Set(odd.flatMap((e) => U.unknownTargets(e.target, classes)))];
+      lines.push(`대상 반에 반 목록에 없는 이름(${names.map((n) => `‘${esc(n)}’`).join(', ')})이 적힌 일정이 ${odd.length}건 있어요. 그 반을 고른 학부모에게는 보이지 않으니 <span class="chip tone-orange">반 이름 확인</span> 표시된 일정을 고쳐 주세요.`);
+    }
+  }
+  box.hidden = !lines.length;
+  box.innerHTML = lines.map((line) => `<p class="admin-notice__line">${icon('alert', 16)}<span>${line}</span></p>`).join('');
+}
+
+$('#admin-notice').addEventListener('click', (event) => {
+  if (event.target.closest('[data-act="classes"]')) openClassManager();
+});
+
+/** 반 관리: 구글시트를 열지 않고 반 목록을 바꿉니다 ([설정] 탭 '반 목록'에 저장) */
+function openClassManager() {
+  if (!state.data) return;
+  const ready = serverVersion() >= CLASS_API_VERSION;
+  let list = [...(state.data.classes || [])];
+  const content = U.el(`
+    <div class="class-manager">
+      <p class="sheet-lead">여기 적은 반이 학부모 화면 <b>우리 반</b> 선택지와 일정의 <b>대상 반</b> 버튼이 돼요. 반을 고른 학부모는 <b>전체 일정 + 우리 반 일정</b>만 봐요.</p>
+      ${ready ? '' : `<p class="form-error">${icon('alert', 15)}지금 배포된 Apps Script는 반 목록 저장을 못 해요. ${esc(REDEPLOY_STEPS)}</p>`}
+      <div class="class-manager__list" data-list></div>
+      <form class="class-manager__add" data-add>
+        <input class="input" name="name" maxlength="20" placeholder="반 이름 (예: 햇님반)" aria-label="추가할 반 이름" autocomplete="off">
+        <button type="submit" class="btn">${icon('plus', 18)}추가</button>
+      </form>
+      <p class="field__hint">이름을 바꾸면 기존 일정의 대상 반도 같은 이름으로 고쳐야 해요. 쉼표로 여러 반을 한 번에 넣을 수 있어요.</p>
+      <p class="form-error" role="alert" hidden data-error></p>
+      <button type="button" class="btn btn--tint btn--block" data-save ${ready ? '' : 'disabled'}>${icon('check', 18)}저장</button>
+    </div>`);
+  const listEl2 = content.querySelector('[data-list]');
+  const errorEl = content.querySelector('[data-error]');
+  const form = content.querySelector('[data-add]');
+  const saveButton = content.querySelector('[data-save]');
+
+  const draw = () => {
+    listEl2.innerHTML = list.length
+      ? list.map((name, i) => `<span class="class-tag">${esc(name)}<button type="button" class="class-tag__remove" data-remove="${i}" aria-label="${esc(name)} 빼기">${icon('xmark', 14)}</button></span>`).join('')
+      : '<p class="muted-line">아직 등록된 반이 없어요</p>';
+  };
+  draw();
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const names = form.elements.name.value.split(/[,，·\n]/).map((n) => n.trim()).filter(Boolean);
+    names.forEach((name) => {
+      if (!list.includes(name)) list.push(name.slice(0, 20));
+    });
+    form.elements.name.value = '';
+    form.elements.name.focus();
+    draw();
+  });
+  listEl2.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-remove]');
+    if (!button) return;
+    list = list.filter((_, i) => i !== Number(button.dataset.remove));
+    draw();
+  });
+
+  const sheet = openSheet({ title: '반 관리', content });
+  saveButton.addEventListener('click', async () => {
+    // 입력칸에 적어 두고 '추가'를 안 눌렀어도 함께 저장합니다.
+    if (form.elements.name.value.trim()) form.requestSubmit();
+    errorEl.hidden = true;
+    saveButton.disabled = true;
+    sheet.setBusy(true);
+    try {
+      const result = await api.saveClasses(state.session.token, list);
+      sheet.close();
+      await afterWrite(result.classes.length ? `반 목록을 저장했어요 · ${result.classes.join(', ')}` : '반 목록을 비웠어요');
+    } catch (err) {
+      saveButton.disabled = false;
+      sheet.setBusy(false);
+      if (/알 수 없는 요청/.test(err.message)) err.message = `지금 배포된 Apps Script는 반 목록 저장을 못 해요. ${REDEPLOY_STEPS}`;
+      handleWriteError(err, sheet, errorEl);
+    }
+  });
 }
 
 async function afterWrite(message, date) {
@@ -376,22 +485,27 @@ function targetField(item, classes) {
         `<button type="button" class="choice-chip" data-target-class="${esc(name)}" aria-pressed="false">${esc(name)}</button>`).join('')}</div>` : ''}
       <input class="input" name="target" value="${esc(item.target || '')}" maxlength="100" placeholder="비워 두면 전체 반" aria-label="대상 반">
       <span class="field__hint">${classes.length
-        ? '여러 반을 고를 수 있어요. 아무 반도 고르지 않으면 모든 반에 보이는 일정이에요.'
-        : '구글시트 [설정] 탭의 \'반 목록\'에 반 이름을 적으면 여기서 눌러서 고를 수 있어요. 비워 두면 전체 반 일정이에요.'}</span>
+        ? '여러 반을 고를 수 있어요. 아무 반도 고르지 않으면(또는 \'전체\') 모든 반에 보이는 일정이에요.'
+        : '위쪽 \'반 관리\'에서 반을 추가하면 여기서 눌러서 고를 수 있어요. 비워 두면 전체 반 일정이에요.'}</span>
     </div>`;
 }
 
 function bindTargetChips(form) {
   const input = form.elements.target;
   const chips = [...form.querySelectorAll('[data-target-class]')];
+  const names = chips.map((chip) => chip.dataset.targetClass);
+  // '햇님반 달님반' · '햇님' 처럼 적힌 값도 해당 반 버튼이 눌린 것으로 보여 줍니다.
+  const selectedNames = () => (U.isAllClasses(input.value) ? [] : names.filter((name) => U.targetIncludesClass(input.value, name)));
   const sync = () => {
-    const selected = U.parseTargets(input.value);
+    const selected = selectedNames();
     chips.forEach((chip) => chip.setAttribute('aria-pressed', String(selected.includes(chip.dataset.targetClass))));
   };
   chips.forEach((chip) => chip.addEventListener('click', () => {
-    const selected = U.parseTargets(input.value);
     const name = chip.dataset.targetClass;
-    input.value = (selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name]).join(', ');
+    const selected = selectedNames();
+    const next = selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name];
+    const others = U.unknownTargets(input.value, names); // 반 목록에 없는 글자는 지우지 않고 둡니다.
+    input.value = [...names.filter((n) => next.includes(n)), ...others].join(', ');
     sync();
   }));
   input.addEventListener('input', sync);
